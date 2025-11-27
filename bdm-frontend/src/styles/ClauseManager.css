@@ -1,0 +1,448 @@
+/* ============================================================
+   ClauseManager.css — Clean Premium Glassmorphism UI
+   Pure CSS — No frameworks
+   ============================================================ */
+
+/* ===================== Root Variables ===================== */
+:root {
+  --bg1: linear-gradient(135deg, #0f172a 0%, #071032 60%);
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-bg-light: rgba(255, 255, 255, 0.02);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --blur: 12px;
+
+  --text: #e6eef8;
+  --text-muted: #94a3b8;
+
+  --accent: linear-gradient(90deg, #7c3aed, #06b6d4);
+  --success: linear-gradient(90deg, #10b981, #06b6d4);
+  --warning: linear-gradient(90deg, #f59e0b, #f97316);
+  --danger: linear-gradient(90deg, #ef4444, #b91c1c);
+
+  --shadow: 0 6px 30px rgba(0, 0, 0, 0.55);
+}
+
+/* ===================== Base Layout ===================== */
+body {
+  background: var(--bg1);
+  color: var(--text);
+  font-family: Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page-wrap {
+  max-width: 1250px;
+  margin: 26px auto;
+  padding: 22px;
+}
+
+/* ===================== Header ===================== */
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  gap: 12px;
+}
+
+.page-title {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* ===================== Buttons ===================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--glass-bg);
+  color: var(--text);
+  border: none;
+  padding: 9px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 0.93rem;
+  backdrop-filter: blur(var(--blur));
+  transition: 0.15s ease;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.btn-primary {
+  background: var(--accent);
+}
+
+.btn-success {
+  background: var(--success);
+  color: #02121a;
+}
+
+.btn-warning {
+  background: var(--warning);
+  color: #1b0e03;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: white;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* AI Button */
+.btn-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: rgb(90, 90, 164) !important;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  border: none;
+  transition: 0.2s ease;
+  box-shadow: var(--shadow);
+}
+
+.btn-ai:hover:not(:disabled) {
+  transform: translateY(-3px);
+  opacity: 0.95;
+}
+
+.btn-ai:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ===================== Form Card ===================== */
+.form-card {
+  background: var(--glass-bg-light);
+  border: 1px solid var(--glass-border);
+  padding: 18px;
+  border-radius: 14px;
+  backdrop-filter: blur(var(--blur));
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+}
+
+.input, .form-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  color: var(--text);
+}
+
+.input:focus, .form-input:focus {
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+
+/* ===================== Rich Text Editor ===================== */
+.rte {
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  overflow: hidden;
+}
+
+.rte-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.rte-toolbar button {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rte-editor {
+  padding: 12px;
+  min-height: 140px;
+  color: #070707 !important;
+  background: rgba(255,255,255,0.02);
+  line-height: 1.7;
+
+  /* MIRROR FIX */
+  direction: ltr !important;
+  unicode-bidi: plaintext !important;
+  writing-mode: horizontal-tb !important;
+
+  transform: none !important;
+  text-align: left !important;
+  caret-color: #393535 !important;
+}
+
+.rte-editor * {
+  color: #484545 !important;
+}
+
+.rte-editor:empty:before {
+  content: attr(data-placeholder);
+  color: #64748b;
+}
+
+/* ===================== Clause Groups ===================== */
+.groups {
+  margin-top: 15px;
+}
+
+.group {
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-light);
+  margin-bottom: 18px;
+}
+
+.group-summary {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.group-title {
+  font-weight: 700;
+}
+
+.group-count {
+  color: var(--text-muted);
+}
+
+/* ===================== Clause Cards ===================== */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  padding: 16px;
+}
+
+@media (max-width: 1000px) {
+  .cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 650px) {
+  .cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.clause-card {
+  background: rgba(255,255,255,0.03);
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  position: relative;
+  transition: 0.15s ease;
+}
+
+.clause-card:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--shadow);
+}
+
+.clause-card.selected {
+  border: 2px solid #3b82f6;
+}
+
+.clause-card.drag-over {
+  border: 2px dashed #10b981;
+}
+
+.card-badges {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  display: flex;
+  gap: 6px;
+}
+
+.badge {
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: white;
+  font-size: 0.8rem;
+}
+
+.badge-ai {
+  background: var(--accent);
+  color: rgb(255, 254, 254);
+}
+
+.badge-sample {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge-merged {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.clause-type {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.clause-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.clause-snippet {
+  max-height: 90px;
+  overflow: hidden;
+  color: #cbd5e1;
+  margin-top: 6px;
+}
+
+/* ===================== Modal ===================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+}
+
+.modal {
+  width: 92%;
+  max-width: 820px;
+  background: rgba(255,255,255,0.04);
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--glass-border);
+  padding-bottom: 10px;
+}
+
+.modal-body {
+  padding: 14px 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.preview-content {
+  background: rgba(255,255,255,0.05);
+  padding: 12px;
+  border-radius: 10px;
+}
+/* Fix cursor shifting left inside contentEditable */
+.rte-editor {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+
+  overflow-wrap: break-word !important;
+  word-break: break-word !important;
+
+  direction: ltr !important;
+  unicode-bidi: plaintext !important;
+  text-align: left !important;
+
+  transform: none !important;
+}
+
+.rte-editor * {
+  width: 100% !important;
+  display: block !important;
+}
+.rte, 
+.rte *, 
+.rte-editor, 
+.rte-editor * {
+    direction: ltr !important;
+    unicode-bidi: normal !important;
+    writing-mode: horizontal-tb !important;
+    text-align: left !important;
+}
+.rte-editor {
+    unicode-bidi: isolate !important;
+}
+
+/* Toolbar button states */
+.rte-btn {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+  font-weight: 600;
+  transition: 0.2s;
+}
+
+.rte-btn.active {
+  background: linear-gradient(90deg, #7c3aed, #06b6d4);
+  border-color: transparent;
+  color: white !important;
+}
+
+.rte-btn:hover {
+  opacity: 0.85;
+}
+/* FINAL FIX — force editor to never switch to RTL */
+.rte-editor,
+.rte-editor * {
+    direction: ltr !important;
+    unicode-bidi: isolate !important;
+    writing-mode: horizontal-tb !important;
+    text-align: left !important;
+    transform: none !important;
+}
