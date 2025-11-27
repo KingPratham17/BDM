@@ -1,7 +1,7 @@
 // bdm-frontend/src/components/TemplateBuilder.jsx
 
 import { useEffect, useState, useMemo } from "react";
-import { templatesAPI, clausesAPI } from "./src/services/api";
+import { templatesAPI, clausesAPI } from "../services/api";
 import {
   Sparkles,
   Trash2,
