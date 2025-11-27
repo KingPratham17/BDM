@@ -1,0 +1,213 @@
+// src/services/translateService.js
+const { randomUUID } = require('crypto');
+const { pool } = require('../config/database');
+const aiService = require('./aiService');
+
+const LANGUAGE_NAMES = {
+  'en': 'English',
+  'es': 'Spanish',
+  'fr': 'French',
+  'de': 'German',
+  'pt': 'Portuguese',
+  'zh': 'Chinese (Simplified)',
+  'hi': 'Hindi',
+  'ar': 'Arabic',
+  'ru': 'Russian',
+};
+
+const PROMPT_TEMPLATE = (text, targetLang) => `
+You are a professional translation assistant specialized in legal and business documents.
+
+Translate the following text into ${LANGUAGE_NAMES[targetLang] || targetLang}.
+
+CRITICAL RULES:
+1. Preserve ALL placeholders exactly as they are (e.g., [Company Name], [Employee Name])
+2. Preserve ALL formatting including:
+   - Line breaks and paragraph structure
+   - Bullet points and numbering
+   - Headers and emphasis
+3. Maintain professional, formal tone appropriate for legal/business documents
+4. Return ONLY the translated text, no explanations or commentary
+5. If you see technical terms or legal clauses, translate them accurately
+
+SOURCE TEXT:
+${text}
+
+TRANSLATED TEXT:`;
+
+async function generateTranslation(text, targetLang) {
+  try {
+    console.log(`🌐 Generating translation to ${targetLang} (${text.length} chars)`);
+    
+    const systemMsg = {
+      role: 'system',
+      content: 'You are a precise translator specialized in legal and business documents. You preserve placeholders, formatting, and maintain professional tone. You return ONLY the translated text without any commentary.'
+    };
+    
+    const userMsg = {
+      role: 'user',
+      content: PROMPT_TEMPLATE(text, targetLang)
+    };
+
+    // Use existing aiService (handles OpenRouter/OpenAI fallback)
+    const result = await aiService.makeAIRequest([systemMsg, userMsg], 0.3);
+
+    if (!result || typeof result.content !== 'string') {
+      throw new Error('AI translation returned invalid response');
+    }
+
+    const translated = result.content.trim();
+    
+    console.log(`✅ Translation generated: ${translated.length} chars`);
+    
+    return { 
+      translated, 
+      meta: { 
+        tokensUsed: result.tokensUsed || 0, 
+        model: result.model || 'unknown' 
+      } 
+    };
+    
+  } catch (error) {
+    console.error('Translation generation error:', error);
+    throw new Error(`Translation failed: ${error.message}`);
+  }
+}
+
+async function createPreview({ originalId, originalType, lang, text, createdBy }) {
+  try {
+    // Generate translation using AI
+    const { translated, meta } = await generateTranslation(text, lang);
+    
+    // Create unique preview ID
+    const previewId = randomUUID();
+    
+    // Preview expires in 30 minutes
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+    // Store preview in database
+    await pool.execute(
+      `INSERT INTO translation_previews
+        (preview_id, original_id, original_type, lang, translated_content, created_by, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        previewId, 
+        originalId || null, 
+        originalType || 'document', 
+        lang, 
+        translated, 
+        createdBy || null, 
+        expiresAt
+      ]
+    );
+
+    // Log AI usage (non-fatal)
+    try {
+      await pool.execute(
+        `INSERT INTO ai_generation_logs 
+         (request_type, prompt, response_data, tokens_used, cost_estimate, created_at)
+         VALUES (?, ?, ?, ?, ?, NOW())`,
+        [
+          'translation_preview',
+          text.length > 1000 ? text.slice(0, 1000) + '...' : text,
+          JSON.stringify({ 
+            lang, 
+            model: meta.model,
+            original_length: text.length,
+            translated_length: translated.length
+          }),
+          meta.tokensUsed || 0,
+          0.0
+        ]
+      );
+    } catch (logError) {
+      console.warn('AI log insert failed (non-fatal):', logError.message);
+    }
+
+    console.log(`✅ Preview created: ${previewId}, expires: ${expiresAt}`);
+
+    return { 
+      previewId, 
+      translated, 
+      expiresAt, 
+      meta 
+    };
+    
+  } catch (error) {
+    console.error('createPreview error:', error);
+    throw error;
+  }
+}
+
+async function confirmPreview({ previewId, userId }) {
+  try {
+    // Fetch preview and ensure not expired
+    const [rows] = await pool.execute(
+      `SELECT * FROM translation_previews 
+       WHERE preview_id = ? AND expires_at > NOW()`,
+      [previewId]
+    );
+    
+    if (!rows || rows.length === 0) {
+      throw new Error('Preview not found or expired');
+    }
+
+    const preview = rows[0];
+
+    console.log(`💾 Confirming translation: doc=${preview.original_id}, lang=${preview.lang}`);
+
+    // Upsert into translations table
+    await pool.execute(
+      `INSERT INTO translations 
+       (original_id, original_type, lang, content, status, created_by, verified_by, created_at)
+       VALUES (?, ?, ?, ?, 'confirmed', ?, ?, NOW())
+       ON DUPLICATE KEY UPDATE 
+         content = VALUES(content), 
+         status = 'confirmed', 
+         updated_at = CURRENT_TIMESTAMP, 
+         verified_by = VALUES(verified_by)`,
+      [
+        preview.original_id, 
+        preview.original_type, 
+        preview.lang, 
+        preview.translated_content, 
+        preview.created_by, 
+        userId || preview.created_by
+      ]
+    );
+
+    // Mark preview as confirmed
+    await pool.execute(
+      `UPDATE translation_previews 
+       SET confirmed = TRUE 
+       WHERE preview_id = ?`,
+      [previewId]
+    );
+
+    // Get the translation ID
+    const [tRows] = await pool.execute(
+      `SELECT id FROM translations 
+       WHERE original_id = ? AND original_type = ? AND lang = ?`,
+      [preview.original_id, preview.original_type, preview.lang]
+    );
+
+    const translationId = tRows[0]?.id ?? null;
+
+    console.log(`✅ Translation confirmed with ID: ${translationId}`);
+
+    return { 
+      translationId, 
+      original: preview 
+    };
+    
+  } catch (error) {
+    console.error('confirmPreview error:', error);
+    throw error;
+  }
+}
+
+module.exports = { 
+  createPreview, 
+  confirmPreview, 
+  generateTranslation 
+};
