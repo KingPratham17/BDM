@@ -6,6 +6,10 @@ import { FileText, Download, Eye, X, Sparkles, Trash2, Save, Globe, CheckCircle 
 import PDFViewer from './PDFViewer';
 import TranslateModal from './TranslateModal';
 
+import { FileText, Download, Eye, X, Sparkles, Trash2, Save, Globe, CheckCircle, Pencil } from 'lucide-react';
+
+import DocumentEditor from './DocumentEditor';
+
 // ===== LANGUAGES WITH INDIAN LANGUAGES =====
 const LANGUAGES = [
   { code: 'es', label: 'Spanish', flag: '🇪🇸' },
@@ -38,6 +42,9 @@ export default function DocumentGenerator() {
   const [templates, setTemplates] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [quickAIMode, setQuickAIMode] = useState(false);
+
+  // Editor state (NEW)
+  const [editingDocument, setEditingDocument] = useState(null);
 
   // Translation state
   const [activeDocTranslations, setActiveDocTranslations] = useState({});
