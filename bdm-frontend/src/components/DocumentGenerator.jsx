@@ -1,11 +1,9 @@
-// bdm-frontend/src/components/DocumentGenerator.jsx - PART 1
-// Copy this entire file - it's split into comments for readability
-
 import { useEffect, useState } from 'react';
 import { documentsAPI, templatesAPI, pdfAPI, clausesAPI } from '../services/api';
-import { FileText, Download, Eye, X, Sparkles, Trash2, Save, Globe, CheckCircle } from 'lucide-react';
+import { FileText, Download, Eye, X, Sparkles, Trash2, Save, Globe, CheckCircle, Pencil } from 'lucide-react';
 import PDFViewer from './PDFViewer';
 import TranslateModal from './TranslateModal';
+import DocumentEditor from './DocumentEditor';
 
 // ===== LANGUAGES WITH INDIAN LANGUAGES =====
 const LANGUAGES = [
@@ -35,6 +33,9 @@ export default function DocumentGenerator() {
   const [templates, setTemplates] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [quickAIMode, setQuickAIMode] = useState(false);
+
+  // Editor state (NEW)
+  const [editingDocument, setEditingDocument] = useState(null);
 
   // Translation state
   const [activeDocTranslations, setActiveDocTranslations] = useState({});
@@ -193,8 +194,6 @@ export default function DocumentGenerator() {
       setGeneratingDoc(false);
     }
   };
-
-  // PART 2 - Add this after Part 1
 
   // ===== TRANSLATION HANDLERS =====
   const handleTranslateRequest = async (docId, lang) => {
@@ -544,6 +543,17 @@ export default function DocumentGenerator() {
     }
   };
 
+  // ===== EDITOR HANDLERS (NEW) =====
+  const handleEditDocument = (doc) => {
+    setEditingDocument(doc);
+  };
+
+  const handleEditorSave = (updatedDoc) => {
+    loadDocuments(); // Reload document list
+    setEditingDocument(null);
+    showNotification('Document updated successfully!', 'success');
+  };
+
   const renderPlaceholderInput = (placeholder, isAiForm = false) => {
     const lowerCaseName = placeholder.toLowerCase().trim();
     const value = isAiForm ? aiPlaceholderValues[placeholder] : placeholderValues[placeholder];
@@ -564,7 +574,6 @@ export default function DocumentGenerator() {
     }
     return <input type="text" id={inputId} className="form-input" value={value || ''} onChange={changeHandler} required />;
   };
-
 
   return (
     <div>
@@ -592,7 +601,6 @@ export default function DocumentGenerator() {
           <FileText size={18} /> Use Template
         </button>
       </div>
-
 
       {quickAIMode && (
         <div className="card" style={{ marginBottom: '2rem' }}>
@@ -679,7 +687,6 @@ export default function DocumentGenerator() {
         </div>
       )}
 
-
       {!quickAIMode && !selectedTemplate && (
         <div className="card" style={{ marginBottom: '2rem' }}>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>📋 Select a Template</h2>
@@ -693,172 +700,188 @@ export default function DocumentGenerator() {
                 <div key={template.id} className="card template-select-card">
                   {template.is_ai_generated && <span className="ai-badge">🤖 AI</span>}
                   <h3>{template.template_name}</h3>
-                  <p>📄 {template.document_type}</p>
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-                    <button onClick={() => handlePreviewTemplate(template)} className="btn btn-outline" style={{ flex: 1 }}>
-                      <Eye size={14} /> Preview
-                    </button>
-                    <button onClick={() => handleSelectTemplate(template)} className="btn btn-primary" style={{ flex: 1 }}>
-                      Select
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+                  <p>📄 {template.document_type
 
+}</p>
+<div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+<button onClick={() => handlePreviewTemplate(template)} className="btn btn-outline" style={{ flex: 1 }}>
+<Eye size={14} /> Preview
+</button>
+<button onClick={() => handleSelectTemplate(template)} className="btn btn-primary" style={{ flex: 1 }}>
+Select
+</button>
+</div>
+</div>
+))}
+</div>
+)}
+</div>
+)}
+  {!quickAIMode && selectedTemplate && (
+    <div className="card" style={{ marginBottom: '2rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+        <h2>✏️ Fill Template: {selectedTemplate.template_name}</h2>
+        <button onClick={resetTemplateForm} className="btn btn-secondary">Change</button>
+      </div>
+      
+      <form onSubmit={(e) => { e.preventDefault(); handleGenerateFromTemplate(); }}>
+        <input 
+          type="text" 
+          value={documentName} 
+          onChange={(e) => setDocumentName(e.target.value)} 
+          className="form-input" 
+          placeholder="Document name" 
+          style={{ marginBottom: '1rem' }}
+          required 
+        />
 
-      {!quickAIMode && selectedTemplate && (
-        <div className="card" style={{ marginBottom: '2rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-            <h2>✏️ Fill Template: {selectedTemplate.template_name}</h2>
-            <button onClick={resetTemplateForm} className="btn btn-secondary">Change</button>
-          </div>
-          
-          <form onSubmit={(e) => { e.preventDefault(); handleGenerateFromTemplate(); }}>
-            <input 
-              type="text" 
-              value={documentName} 
-              onChange={(e) => setDocumentName(e.target.value)} 
-              className="form-input" 
-              placeholder="Document name" 
-              style={{ marginBottom: '1rem' }}
-              required 
-            />
-
-            {placeholders.length > 0 && (
-              <div className="placeholder-grid" style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '1.5rem' }}>
-                {placeholders.map((placeholder) => (
-                  <div key={placeholder} className="form-group-inline">
-                    <label>{placeholder}</label>
-                    {renderPlaceholderInput(placeholder, false)}
-                  </div>
-                ))}
+        {placeholders.length > 0 && (
+          <div className="placeholder-grid" style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '1.5rem' }}>
+            {placeholders.map((placeholder) => (
+              <div key={placeholder} className="form-group-inline">
+                <label>{placeholder}</label>
+                {renderPlaceholderInput(placeholder, false)}
               </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <button type="button" onClick={handlePreviewWithValues} className="btn btn-secondary" style={{ flex: 1 }}>
-                <Eye size={16} /> Preview
-              </button>
-              <button type="submit" disabled={generatingDoc} className="btn btn-success" style={{ flex: 1 }}>
-                {generatingDoc ? 'Generating...' : 'Generate'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-
-      <div className="card">
-        <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>📚 Generated Documents</h2>
-        {loadingDocuments ? (
-          <div className="loading"><div className="spinner"></div></div>
-        ) : documents.length === 0 ? (
-          <div className="empty-state"><p>No documents yet.</p></div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {documents.map((doc) => {
-              const hasConfirmedTranslation = activeDocTranslations[doc.id];
-              
-              return (
-                <div key={doc.id} className="card document-list-item-card">
-                  <div>
-                    <h3 className="document-name">{doc.document_name}</h3>
-                    <p className="document-meta">
-                      📄 {doc.document_type} • {new Date(doc.created_at).toLocaleDateString()}
-                      {hasConfirmedTranslation && (
-                        <span style={{ marginLeft: '0.5rem', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                          <CheckCircle size={14} /> {hasConfirmedTranslation.lang.toUpperCase()} Translated
-                        </span>
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="document-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <button onClick={() => handlePreviewPDF(doc.id)} className="btn btn-secondary btn-sm">
-                      <Eye size={14} /> Preview
-                    </button>
-                    <button onClick={() => handleDownloadPDF(doc.id, doc.document_name)} className="btn btn-success btn-sm">
-                      <Download size={14} /> Download
-                    </button>
-                    <button onClick={() => handleDeleteDocument(doc.id)} className="btn btn-danger btn-sm">
-                      <Trash2 size={14} /> Delete
-                    </button>
-
-                    <div style={{ 
-                      marginLeft: '8px', 
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      display: 'flex',
-                      gap: '8px',
-                      alignItems: 'center'
-                    }}>
-                      <Globe size={16} color="white" />
-                      <select
-                        style={{
-                          padding: '4px 8px',
-                          borderRadius: '6px',
-                          border: 'none',
-                          fontSize: '0.875rem'
-                        }}
-                        onChange={(e) => {
-                          if (e.target.value && e.target.value !== 'select') {
-                            handleTranslateRequest(doc.id, e.target.value);
-                          }
-                        }}
-                        disabled={translating}
-                      >
-                        <option value="select">Translate to...</option>
-                        {LANGUAGES.map(lang => (
-                          <option key={lang.code} value={lang.code}>
-                            {lang.flag} {lang.label}
-                          </option>
-                        ))}
-                      </select>
-                      {translating && currentDocIdForTranslate === doc.id && (
-                        <div className="spinner-small" style={{ width: '14px', height: '14px' }}></div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            ))}
           </div>
         )}
-      </div>
-      {pdfUrl && (
-        <div className="modal-overlay" onClick={() => setPdfUrl(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', width: '1200px' }}>
-            <div className="modal-header">
-              <h3>PDF Preview</h3>
-              <button onClick={() => setPdfUrl(null)} className="btn-close-modal"><X size={24} /></button>
-            </div>
-            <div className="modal-body" style={{ padding: 0 }}>
-              <PDFViewer pdfUrl={pdfUrl} />
-            </div>
-          </div>
-        </div>
-      )}
 
-      <TranslateModal
-        open={translateModalOpen}
-        onClose={() => {
-          setTranslateModalOpen(false);
-          setTranslatePreview(null);
-          setTranslateConfirmed(false);
-          setTranslationIdSaved(null);
-        }}
-        english={translateEnglish}
-        translated={translatePreview?.translated || ''}
-        lang={currentTranslateLang}
-        confirmed={translateConfirmed}
-        onConfirm={handleTranslateConfirm}
-        onDownload={handleTranslateDownloadPdf}
-      />
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <button type="button" onClick={handlePreviewWithValues} className="btn btn-secondary" style={{ flex: 1 }}>
+            <Eye size={16} /> Preview
+          </button>
+          <button type="submit" disabled={generatingDoc} className="btn btn-success" style={{ flex: 1 }}>
+            {generatingDoc ? 'Generating...' : 'Generate'}
+          </button>
+        </div>
+      </form>
     </div>
+  )}
+
+  <div className="card">
+    <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>📚 Generated Documents</h2>
+    {loadingDocuments ? (
+      <div className="loading"><div className="spinner"></div></div>
+    ) : documents.length === 0 ? (
+      <div className="empty-state"><p>No documents yet.</p></div>
+    ) : (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        {documents.map((doc) => {
+          const hasConfirmedTranslation = activeDocTranslations[doc.id];
+          
+          return (
+            <div key={doc.id} className="card document-list-item-card">
+              <div>
+                <h3 className="document-name">{doc.document_name}</h3>
+                <p className="document-meta">
+                  📄 {doc.document_type} • {new Date(doc.created_at).toLocaleDateString()}
+                  {hasConfirmedTranslation && (
+                    <span style={{ marginLeft: '0.5rem', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <CheckCircle size={14} /> {hasConfirmedTranslation.lang.toUpperCase()} Translated
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              <div className="document-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                {/* EDIT BUTTON (NEW) */}
+                <button onClick={() => handleEditDocument(doc)} className="btn btn-warning btn-sm">
+                  <Pencil size={14} /> Edit
+                </button>
+
+                <button onClick={() => handlePreviewPDF(doc.id)} className="btn btn-secondary btn-sm">
+                  <Eye size={14} /> Preview
+                </button>
+                <button onClick={() => handleDownloadPDF(doc.id, doc.document_name)} className="btn btn-success btn-sm">
+                  <Download size={14} /> Download
+                </button>
+                <button onClick={() => handleDeleteDocument(doc.id)} className="btn btn-danger btn-sm">
+                  <Trash2 size={14} /> Delete
+                </button>
+
+                <div style={{ 
+                  marginLeft: '8px', 
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  display: 'flex',
+                  gap: '8px',
+                  alignItems: 'center'
+                }}>
+                  <Globe size={16} color="white" />
+                  <select
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontSize: '0.875rem'
+                    }}
+                    onChange={(e) => {
+                      if (e.target.value && e.target.value !== 'select') {
+                        handleTranslateRequest(doc.id, e.target.value);
+                      }
+                    }}
+                    disabled={translating}
+                  >
+                    <option value="select">Translate to...</option>
+                    {LANGUAGES.map(lang => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.flag} {lang.label}
+                      </option>
+                    ))}
+                  </select>
+                  {translating && currentDocIdForTranslate === doc.id && (
+                    <div className="spinner-small" style={{ width: '14px', height: '14px' }}></div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </div>
+
+  {/* PDF Preview Modal */}
+  {pdfUrl && (
+    <div className="modal-overlay" onClick={() => setPdfUrl(null)}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', width: '1200px' }}>
+        <div className="modal-header">
+          <h3>PDF Preview</h3>
+          <button onClick={() => setPdfUrl(null)} className="btn-close-modal"><X size={24} /></button>
+        </div>
+        <div className="modal-body" style={{ padding: 0 }}>
+          <PDFViewer pdfUrl={pdfUrl} />
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* Translation Modal */}
+  <TranslateModal
+    open={translateModalOpen}
+    onClose={() => {
+      setTranslateModalOpen(false);
+      setTranslatePreview(null);
+      setTranslateConfirmed(false);
+      setTranslationIdSaved(null);
+    }}
+    english={translateEnglish}
+    translated={translatePreview?.translated || ''}
+    lang={currentTranslateLang}
+    confirmed={translateConfirmed}
+    onConfirm={handleTranslateConfirm}
+    onDownload={handleTranslateDownloadPdf}
+  />
+
+  {/* Document Editor Modal (NEW) */}
+  {editingDocument && (
+    <DocumentEditor
+      document={editingDocument}
+      onClose={() => setEditingDocument(null)}
+      onSave={handleEditorSave}
+    />
+  )}
+</div>
   );
 }
