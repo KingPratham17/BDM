@@ -1,8 +1,13 @@
+// bdm-frontend/src/components/DocumentGenerator.jsx
+
 import { useEffect, useState } from 'react';
 import { documentsAPI, templatesAPI, pdfAPI, clausesAPI } from '../services/api';
-import { FileText, Download, Eye, X, Sparkles, Trash2, Save, Globe, CheckCircle, Pencil } from 'lucide-react';
+import { FileText, Download, Eye, X, Sparkles, Trash2, Save, Globe, CheckCircle } from 'lucide-react';
 import PDFViewer from './PDFViewer';
 import TranslateModal from './TranslateModal';
+
+import { FileText, Download, Eye, X, Sparkles, Trash2, Save, Globe, CheckCircle, Pencil } from 'lucide-react';
+
 import DocumentEditor from './DocumentEditor';
 
 // ===== LANGUAGES WITH INDIAN LANGUAGES =====
@@ -29,7 +34,11 @@ const LANGUAGES = [
 ];
 
 export default function DocumentGenerator() {
-  // ===== STATE VARIABLES =====
+  // ===== BULK (TEMPLATE) EXCEL STATE =====
+  const [bulkExcelFile, setBulkExcelFile] = useState(null);
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+
+  // ===== CORE STATE =====
   const [templates, setTemplates] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [quickAIMode, setQuickAIMode] = useState(false);
@@ -48,7 +57,7 @@ export default function DocumentGenerator() {
   const [translationIdSaved, setTranslationIdSaved] = useState(null);
   const [translating, setTranslating] = useState(false);
 
-  // AI generation state
+  // AI generation state (OLD STEP-BASED FLOW)
   const [aiStep, setAiStep] = useState(1);
   const [aiDocType, setAiDocType] = useState('');
   const [aiInitialContext, setAiInitialContext] = useState('');
@@ -56,6 +65,10 @@ export default function DocumentGenerator() {
   const [aiPlaceholders, setAiPlaceholders] = useState([]);
   const [aiPlaceholderValues, setAiPlaceholderValues] = useState({});
   const [aiDocumentName, setAiDocumentName] = useState('');
+
+  // AI Bulk Excel Generation (NEW, uses aiDocType as document_type)
+  const [aiExcelFile, setAiExcelFile] = useState(null);
+  const [aiBulkLoading, setAiBulkLoading] = useState(false);
 
   // Template state
   const [selectedTemplate, setSelectedTemplate] = useState(null);
@@ -74,9 +87,9 @@ export default function DocumentGenerator() {
   const [notification, setNotification] = useState(null);
 
   // ===== EFFECTS =====
-  useEffect(() => { 
-    loadTemplates(); 
-    loadDocuments(); 
+  useEffect(() => {
+    loadTemplates();
+    loadDocuments();
   }, []);
 
   // ===== UTILITY FUNCTIONS =====
@@ -133,11 +146,11 @@ export default function DocumentGenerator() {
     }
   };
 
-  // ===== AI CLAUSE GENERATION =====
+  // ===== AI CLAUSE GENERATION (STEP 1) =====
   const handleAIGenerateClauses = async (e) => {
     e.preventDefault();
     if (!aiDocType) return showNotification('Please enter document type', 'error');
-    
+
     let parsedContext = {};
     if (aiInitialContext) {
       try {
@@ -146,20 +159,20 @@ export default function DocumentGenerator() {
         return showNotification('Invalid JSON in initial context.', 'error');
       }
     }
-    
+
     setGeneratingDoc(true);
     try {
-      const res = await clausesAPI.generateAI({ 
-        document_type: aiDocType, 
-        category: aiDocType, 
-        context: parsedContext 
+      const res = await clausesAPI.generateAI({
+        document_type: aiDocType,
+        category: aiDocType,
+        context: parsedContext
       });
-      
+
       const generatedClauses = res?.data?.data?.clauses;
       if (!Array.isArray(generatedClauses) || generatedClauses.length === 0) {
         throw new Error("AI did not return valid clauses.");
       }
-      
+
       setAiGeneratedClauses(generatedClauses);
 
       // Extract placeholders
@@ -175,16 +188,16 @@ export default function DocumentGenerator() {
           }
         }
       });
-      
+
       const placeholderArray = Array.from(foundPlaceholders);
       setAiPlaceholders(placeholderArray);
-      
+
       const initialValues = {};
       placeholderArray.forEach(p => initialValues[p] = '');
       setAiPlaceholderValues(initialValues);
       setAiDocumentName(`${aiDocType}_AI_${Date.now()}`);
       setAiStep(2);
-      
+
       showNotification(`AI generated ${generatedClauses.length} clauses. Fill ${placeholderArray.length} placeholders.`, 'success');
     } catch (err) {
       console.error("Error generating AI clauses:", err);
@@ -195,6 +208,106 @@ export default function DocumentGenerator() {
     }
   };
 
+  // ===== AI PREVIEW & SAVE (STEP 2) =====
+  const handlePreviewAIValues = () => {
+    if (!Array.isArray(aiGeneratedClauses) || aiGeneratedClauses.length === 0) {
+      return showNotification("No AI clauses generated yet.", "error");
+    }
+
+    const previewClauses = aiGeneratedClauses.map(clause => {
+      let filledContent = String(clause?.content || '');
+      aiPlaceholders.forEach(placeholder => {
+        const value = aiPlaceholderValues[placeholder] || `[${placeholder}]`;
+        const escapedPlaceholder = placeholder.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        filledContent = filledContent.replace(new RegExp(`\\[${escapedPlaceholder}\\]`, 'g'), value);
+      });
+      return { ...clause, content: filledContent };
+    });
+
+    setPreviewContentWithValues(previewClauses);
+    setShowValuePreviewModal(true);
+  };
+
+  const handleAISaveDocument = async (e) => {
+    if (e) e.preventDefault();
+
+    if (!aiDocumentName || !Array.isArray(aiGeneratedClauses) || aiGeneratedClauses.length === 0) {
+      return showNotification('Missing document name or generated clauses.', 'error');
+    }
+
+    const finalClauses = aiGeneratedClauses.map(clause => {
+      let filledContent = String(clause?.content || '');
+      aiPlaceholders.forEach(placeholder => {
+        const value = aiPlaceholderValues[placeholder] || `[${placeholder}]`;
+        const escapedPlaceholder = placeholder.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        filledContent = filledContent.replace(new RegExp(`\\[${escapedPlaceholder}\\]`, 'g'), value);
+      });
+      return { ...clause, content: filledContent };
+    });
+
+    setShowValuePreviewModal(false);
+    setGeneratingDoc(true);
+
+    try {
+      await documentsAPI.generate({
+        document_name: aiDocumentName,
+        document_type: aiDocType,
+        content_json: { clauses: finalClauses },
+        variables: aiPlaceholderValues
+      });
+
+      await loadDocuments();
+      showNotification('Document saved successfully!', 'success');
+      resetQuickAIForm();
+    } catch (err) {
+      console.error("Error saving AI document:", err);
+      showNotification(`Failed to save: ${err.message || 'Server error'}`, 'error');
+    } finally {
+      setGeneratingDoc(false);
+    }
+  };
+
+  // ===== 🆕 AI BULK GENERATION (EXCEL → AI → PDFs → ZIP) =====
+  const handleAiBulkGenerate = async () => {
+    try {
+      if (!aiExcelFile) {
+        return showNotification('Please upload an Excel file for AI bulk generation.', 'error');
+      }
+      if (!aiDocType) {
+        return showNotification('Please enter document type before AI bulk generation.', 'error');
+      }
+
+      setAiBulkLoading(true);
+      showNotification('Starting AI bulk generation. Please wait...', 'info');
+
+      const response = await documentsAPI.aiBulkGenerateFromExcel(
+        aiDocType,
+        aiExcelFile
+      );
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `AI_Bulk_Documents_${Date.now()}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      showNotification('AI bulk documents generated successfully. ZIP downloaded.', 'success');
+    } catch (error) {
+      console.error('AI Bulk Error:', error);
+      const msg =
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error.message ||
+        'Failed to generate AI bulk documents';
+      showNotification(msg, 'error');
+    } finally {
+      setAiBulkLoading(false);
+    }
+  };
+
   // ===== TRANSLATION HANDLERS =====
   const handleTranslateRequest = async (docId, lang) => {
     setTranslating(true);
@@ -202,15 +315,13 @@ export default function DocumentGenerator() {
     setTranslationIdSaved(null);
     setCurrentDocIdForTranslate(docId);
     setCurrentTranslateLang(lang);
-    
+
     try {
       console.log(`🌐 Requesting translation for doc ${docId} to ${lang}`);
-      
-      // Fetch English text
+
       const enResp = await documentsAPI.getContent(docId, 'en');
       console.log('English response:', enResp);
-      
-      // Handle different response structures
+
       let enText = '';
       if (enResp?.data) {
         if (typeof enResp.data === 'string') {
@@ -221,28 +332,27 @@ export default function DocumentGenerator() {
           enText = enResp.data.data.text;
         }
       }
-      
+
       setTranslateEnglish(enText);
 
-      // Request preview
       const previewResp = await documentsAPI.translatePreview(docId, lang);
       console.log('Preview response:', previewResp);
-      
+
       const pData = previewResp?.data || previewResp;
-      
+
       if (!pData?.success) {
         throw new Error(pData?.error || 'Preview failed');
       }
-      
-      setTranslatePreview({ 
-        previewId: pData.previewId, 
-        translated: pData.translated, 
-        expiresAt: pData.expiresAt 
+
+      setTranslatePreview({
+        previewId: pData.previewId,
+        translated: pData.translated,
+        expiresAt: pData.expiresAt
       });
-      
+
       setTranslateModalOpen(true);
       showNotification('Translation preview generated!', 'success');
-      
+
     } catch (err) {
       console.error('Translate preview failed', err);
       showNotification('Translation failed: ' + (err.message || err), 'error');
@@ -255,21 +365,20 @@ export default function DocumentGenerator() {
     if (!translatePreview?.previewId) {
       return showNotification('No preview to confirm', 'error');
     }
-    
+
     try {
       console.log(`✅ Confirming translation: ${translatePreview.previewId}`);
-      
+
       const resp = await documentsAPI.translateConfirm(translatePreview.previewId);
       const data = resp?.data || resp;
-      
+
       if (!data?.success) {
         throw new Error(data?.error || 'Confirm failed');
       }
-      
+
       setTranslateConfirmed(true);
       setTranslationIdSaved(data.translationId || null);
-      
-      // Track confirmed translation
+
       setActiveDocTranslations(prev => ({
         ...prev,
         [currentDocIdForTranslate]: {
@@ -277,9 +386,9 @@ export default function DocumentGenerator() {
           translationId: data.translationId
         }
       }));
-      
+
       showNotification('Translation confirmed and saved!', 'success');
-      
+
     } catch (err) {
       console.error('Translate confirm error', err);
       showNotification('Confirmation failed: ' + (err.message || err), 'error');
@@ -288,26 +397,25 @@ export default function DocumentGenerator() {
 
   const handleTranslateDownloadPdf = async (which) => {
     if (!currentDocIdForTranslate) return;
-    
+
     if ((which === 'translated' || which === 'both') && !translateConfirmed) {
       return showNotification('Please confirm translation first!', 'error');
     }
 
-    const body = { 
-      lang: which === 'both' ? 'both' : (which === 'en' ? 'en' : currentTranslateLang) 
+    const body = {
+      lang: which === 'both' ? 'both' : (which === 'en' ? 'en' : currentTranslateLang)
     };
-    
+
     if (translationIdSaved) {
       body.translationId = translationIdSaved;
     }
-    
+
     try {
       console.log(`📥 Downloading PDF: ${which}`, body);
-      
+
       const blobResp = await documentsAPI.generatePdf(currentDocIdForTranslate, body);
       const blob = blobResp.data || blobResp;
-      
-      // Create download link
+
       const url = window.URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
       const a = document.createElement('a');
       const nameSuffix = which === 'both' ? 'bilingual' : (which === 'en' ? 'en' : currentTranslateLang);
@@ -317,70 +425,11 @@ export default function DocumentGenerator() {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-      
+
       showNotification('PDF download started!', 'success');
     } catch (err) {
       console.error('PDF download error', err);
       showNotification('Download failed: ' + (err.message || err), 'error');
-    }
-  };
-
-  // ===== PREVIEW & SAVE HANDLERS =====
-  const handlePreviewAIValues = () => {
-    if (!Array.isArray(aiGeneratedClauses) || aiGeneratedClauses.length === 0) {
-      return showNotification("No AI clauses generated yet.", "error");
-    }
-    
-    const previewClauses = aiGeneratedClauses.map(clause => {
-      let filledContent = String(clause?.content || '');
-      aiPlaceholders.forEach(placeholder => {
-        const value = aiPlaceholderValues[placeholder] || `[${placeholder}]`;
-        const escapedPlaceholder = placeholder.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        filledContent = filledContent.replace(new RegExp(`\\[${escapedPlaceholder}\\]`, 'g'), value);
-      });
-      return { ...clause, content: filledContent };
-    });
-    
-    setPreviewContentWithValues(previewClauses);
-    setShowValuePreviewModal(true);
-  };
-
-  const handleAISaveDocument = async (e) => {
-    if (e) e.preventDefault();
-    
-    if (!aiDocumentName || !Array.isArray(aiGeneratedClauses) || aiGeneratedClauses.length === 0) {
-      return showNotification('Missing document name or generated clauses.', 'error');
-    }
-    
-    const finalClauses = aiGeneratedClauses.map(clause => {
-      let filledContent = String(clause?.content || '');
-      aiPlaceholders.forEach(placeholder => {
-        const value = aiPlaceholderValues[placeholder] || `[${placeholder}]`;
-        const escapedPlaceholder = placeholder.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-        filledContent = filledContent.replace(new RegExp(`\\[${escapedPlaceholder}\\]`, 'g'), value);
-      });
-      return { ...clause, content: filledContent };
-    });
-    
-    setShowValuePreviewModal(false);
-    setGeneratingDoc(true);
-    
-    try {
-      await documentsAPI.generate({ 
-        document_name: aiDocumentName, 
-        document_type: aiDocType, 
-        content_json: { clauses: finalClauses }, 
-        variables: aiPlaceholderValues 
-      });
-      
-      await loadDocuments();
-      showNotification('Document saved successfully!', 'success');
-      resetQuickAIForm();
-    } catch (err) {
-      console.error("Error saving AI document:", err);
-      showNotification(`Failed to save: ${err.message || 'Server error'}`, 'error');
-    } finally {
-      setGeneratingDoc(false);
     }
   };
 
@@ -389,7 +438,7 @@ export default function DocumentGenerator() {
     setLoadingModalData(true);
     setShowTemplatePreviewModal(true);
     setPreviewTemplateData(null);
-    
+
     try {
       const res = await templatesAPI.getById(templateSummary.id);
       setPreviewTemplateData(res.data.data);
@@ -409,17 +458,17 @@ export default function DocumentGenerator() {
     setPlaceholderValues({});
     setDocumentName('');
     setShowTemplatePreviewModal(false);
-    
+
     try {
       const res = await templatesAPI.getById(templateSummary.id);
       const templateData = res.data.data;
-      
+
       if (!templateData || !Array.isArray(templateData.clauses)) {
         throw new Error('Invalid template data');
       }
-      
+
       setSelectedTemplate(templateData);
-      
+
       // Extract placeholders
       const foundPlaceholders = new Set();
       templateData.clauses.forEach(clause => {
@@ -433,15 +482,15 @@ export default function DocumentGenerator() {
           }
         }
       });
-      
+
       const placeholderArray = Array.from(foundPlaceholders);
       setPlaceholders(placeholderArray);
-      
+
       const initialValues = {};
       placeholderArray.forEach(p => initialValues[p] = '');
       setPlaceholderValues(initialValues);
       setDocumentName(`${templateData.template_name}_${Date.now()}`);
-      
+
       showNotification(`Template selected. Fill ${placeholderArray.length} placeholders.`, 'info');
     } catch (err) {
       console.error("Error selecting template:", err);
@@ -464,7 +513,7 @@ export default function DocumentGenerator() {
       showNotification("Cannot preview: Template missing", 'error');
       return;
     }
-    
+
     const previewClauses = selectedTemplate.clauses.map(clause => {
       let filledContent = clause.content || '';
       placeholders.forEach(placeholder => {
@@ -474,14 +523,14 @@ export default function DocumentGenerator() {
       });
       return { ...clause, content: filledContent };
     });
-    
+
     setPreviewContentWithValues(previewClauses);
     setShowValuePreviewModal(true);
   };
 
   const handleGenerateFromTemplate = async () => {
     if (!selectedTemplate) return showNotification('Please select a template first', 'error');
-    
+
     const emptyPlaceholders = placeholders.filter(p => !placeholderValues[p]);
     if (emptyPlaceholders.length > 0) {
       const confirmContinue = window.confirm(
@@ -489,16 +538,16 @@ export default function DocumentGenerator() {
       );
       if (!confirmContinue) return;
     }
-    
+
     try {
       setGeneratingDoc(true);
-      await documentsAPI.generate({ 
-        template_id: selectedTemplate.id, 
-        document_name: documentName || `${selectedTemplate.template_name}_${Date.now()}`, 
-        document_type: selectedTemplate.document_type, 
-        context: placeholderValues 
+      await documentsAPI.generate({
+        template_id: selectedTemplate.id,
+        document_name: documentName || `${selectedTemplate.template_name}_${Date.now()}`,
+        document_type: selectedTemplate.document_type,
+        context: placeholderValues
       });
-      
+
       await loadDocuments();
       showNotification('Document generated successfully!', 'success');
       resetTemplateForm();
@@ -522,16 +571,16 @@ export default function DocumentGenerator() {
 
   const handleDeleteDocument = async (docId) => {
     if (!window.confirm('Are you sure you want to delete this document?')) return;
-    
+
     try {
       await documentsAPI.delete(docId);
       await loadDocuments();
       showNotification('Document deleted', 'success');
-      
+
       if (pdfUrl && pdfUrl.includes(`/documents/${docId}/`)) {
         setPdfUrl(null);
       }
-      
+
       setActiveDocTranslations(prev => {
         const newState = { ...prev };
         delete newState[docId];
@@ -543,15 +592,48 @@ export default function DocumentGenerator() {
     }
   };
 
-  // ===== EDITOR HANDLERS (NEW) =====
-  const handleEditDocument = (doc) => {
-    setEditingDocument(doc);
+  // ===== TEMPLATE BULK EXCEL HANDLERS =====
+  const handleBulkExcelFileChange = (e) => {
+    const file = e.target.files?.[0];
+    setBulkExcelFile(file || null);
   };
 
-  const handleEditorSave = (updatedDoc) => {
-    loadDocuments(); // Reload document list
-    setEditingDocument(null);
-    showNotification('Document updated successfully!', 'success');
+  const handleBulkGenerateFromExcel = async () => {
+    if (!selectedTemplate) {
+      return showNotification('Please select a template first', 'error');
+    }
+    if (!bulkExcelFile) {
+      return showNotification('Please upload an Excel file first', 'error');
+    }
+
+    try {
+      setBulkGenerating(true);
+      showNotification('Starting bulk generation. Please wait...', 'info');
+
+      const res = await documentsAPI.bulkGenerateFromExcel(selectedTemplate.id, bulkExcelFile);
+      const blob = new Blob([res.data], { type: 'application/zip' });
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bulk_documents_${Date.now()}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      showNotification('Bulk documents generated successfully. ZIP downloaded.', 'success');
+    } catch (err) {
+      console.error('Bulk Excel generation error:', err);
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err.message ||
+        'Failed to bulk-generate documents';
+      showNotification(msg, 'error');
+    } finally {
+      setBulkGenerating(false);
+    }
   };
 
   const renderPlaceholderInput = (placeholder, isAiForm = false) => {
@@ -559,10 +641,10 @@ export default function DocumentGenerator() {
     const value = isAiForm ? aiPlaceholderValues[placeholder] : placeholderValues[placeholder];
     const changeHandler = (e) => handlePlaceholderChange(placeholder, e.target.value, isAiForm);
     const inputId = `${placeholder.replace(/\s+/g, '-')}-${isAiForm ? 'ai' : 'template'}`;
-    
+
     const dateKeywords = ['date', 'start date', 'end date', 'effective date', 'signing date'];
     const isDateField = dateKeywords.includes(lowerCaseName) || lowerCaseName.endsWith(' date');
-    
+
     const signatureKeywords = ['signature', 'candidate signature', 'employer signature'];
     const isSignatureField = signatureKeywords.includes(lowerCaseName) || lowerCaseName.endsWith(' signature');
 
@@ -575,10 +657,11 @@ export default function DocumentGenerator() {
     return <input type="text" id={inputId} className="form-input" value={value || ''} onChange={changeHandler} required />;
   };
 
+  // ===== RENDER =====
   return (
     <div>
       <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '1rem' }}>📄 Document Generator</h1>
-      
+
       {notification && (
         <div className={`alert alert-${notification.type}`}>
           {notification.message}
@@ -586,15 +669,15 @@ export default function DocumentGenerator() {
       )}
 
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
-        <button 
-          onClick={() => { setQuickAIMode(true); resetTemplateForm(); }} 
+        <button
+          onClick={() => { setQuickAIMode(true); resetTemplateForm(); }}
           className={`btn ${quickAIMode ? 'btn-primary' : 'btn-outline'}`}
           style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
         >
           <Sparkles size={18} /> Quick AI Generate
         </button>
-        <button 
-          onClick={() => { setQuickAIMode(false); resetQuickAIForm(); }} 
+        <button
+          onClick={() => { setQuickAIMode(false); resetQuickAIForm(); }}
           className={`btn ${!quickAIMode ? 'btn-primary' : 'btn-outline'}`}
           style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
         >
@@ -602,91 +685,185 @@ export default function DocumentGenerator() {
         </button>
       </div>
 
-      {quickAIMode && (
-        <div className="card" style={{ marginBottom: '2rem' }}>
-          {aiStep === 1 && (
-            <>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>
-                ⚡ Quick AI Generate - Step 1
-              </h2>
-              <form onSubmit={handleAIGenerateClauses}>
-                <div style={{ display: 'grid', gap: '1rem' }}>
-                  <input 
-                    type="text" 
-                    placeholder="Document Type (e.g., offer_letter, nda) *" 
-                    value={aiDocType} 
-                    onChange={(e) => setAiDocType(e.target.value)} 
-                    className="form-input" 
-                    required 
-                  />
-                  <textarea 
-                    placeholder="Optional initial context (JSON format)" 
-                    value={aiInitialContext} 
-                    onChange={(e) => setAiInitialContext(e.target.value)} 
-                    className="form-textarea" 
-                    rows="3" 
-                  />
-                  <button type="submit" disabled={generatingDoc} className="btn btn-primary">
-                    {generatingDoc ? 'Generating...' : '➡️ Generate Clauses'}
-                  </button>
-                </div>
-              </form>
-            </>
-          )}
+      {/* TEMPLATE BULK GENERATION BLOCK (shows only when a template is selected) */}
+      {selectedTemplate && (
+        <div className="card" style={{ marginTop: '1.5rem' }}>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.75rem' }}>
+            📊 Generate Document through Excel (Template-Based)
+          </h2>
 
-          {aiStep === 2 && (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>
-                  ⚡ Step 2: Fill Placeholders for "{aiDocType}"
-                </h2>
-                <button onClick={resetQuickAIForm} className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem' }}>
-                  Start Over
-                </button>
-              </div>
-              
-              <form onSubmit={handleAISaveDocument}>
-                <div style={{ marginBottom: '1rem' }}>
-                  <label className="form-label">Document Name</label>
-                  <input 
-                    type="text" 
-                    value={aiDocumentName} 
-                    onChange={(e) => setAiDocumentName(e.target.value)} 
-                    className="form-input" 
-                    required 
-                  />
-                </div>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="file-upload-wrapper">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => document.getElementById("excelFileInput").click()}
+                disabled={bulkGenerating}
+                style={{ marginRight: "10px" }}
+              >
+                {bulkExcelFile ? "Uploaded" : "Choose Excel File"}
+              </button>
 
-                {aiPlaceholders.length > 0 && (
-                  <>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem' }}>
-                      Fill Placeholders ({aiPlaceholders.length})
-                    </h3>
-                    <div className="placeholder-grid" style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '1.5rem' }}>
-                      {aiPlaceholders.map((placeholder) => (
-                        <div key={placeholder} className="form-group-inline">
-                          <label>{placeholder}</label>
-                          {renderPlaceholderInput(placeholder, true)}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
+              <input
+                id="excelFileInput"
+                type="file"
+                accept=".xlsx,.xls"
+                style={{ display: "none" }}
+                onChange={handleBulkExcelFileChange}
+                disabled={bulkGenerating}
+              />
+            </div>
 
-                <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
-                  <button type="button" onClick={handlePreviewAIValues} className="btn btn-secondary" style={{ flex: 1 }}>
-                    <Eye size={16} /> Preview
-                  </button>
-                  <button type="submit" disabled={generatingDoc} className="btn btn-success" style={{ flex: 1 }}>
-                    <Save size={18}/> {generatingDoc ? 'Saving...' : 'Save Document'}
-                  </button>
-                </div>
-              </form>
-            </>
-          )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleBulkGenerateFromExcel}
+              disabled={bulkGenerating || !bulkExcelFile}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              {bulkGenerating ? 'Generating...' : 'Generate Documents'}
+            </button>
+          </div>
+          <p style={{ fontSize: '0.8rem', marginTop: '0.5rem', color: '#555' }}>
+            Note: If the Excel columns don’t match the template placeholders, an error message will be shown.
+          </p>
         </div>
       )}
 
+      {/* ========================= QUICK AI MODE ========================= */}
+      {quickAIMode && (
+        <>
+          {/* OLD STEP-BASED AI FLOW */}
+          <div className="card" style={{ marginBottom: '2rem', marginTop: '1.5rem' }}>
+            {aiStep === 1 && (
+              <>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>
+                  ⚡ Quick AI Generate - Step 1
+                </h2>
+                <form onSubmit={handleAIGenerateClauses}>
+                  <div style={{ display: 'grid', gap: '1rem' }}>
+                    <input
+                      type="text"
+                      placeholder="Document Type (e.g., offerletter, nda) *"
+                      value={aiDocType}
+                      onChange={(e) => setAiDocType(e.target.value)}
+                      className="form-input"
+                      required
+                    />
+                    <textarea
+                      placeholder="Optional initial context (JSON format)"
+                      value={aiInitialContext}
+                      onChange={(e) => setAiInitialContext(e.target.value)}
+                      className="form-textarea"
+                      rows="3"
+                    />
+                    <button type="submit" disabled={generatingDoc} className="btn btn-primary">
+                      {generatingDoc ? 'Generating...' : '➡️ Generate Clauses'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+
+            {aiStep === 2 && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>
+                    ⚡ Step 2: Fill Placeholders for "{aiDocType}"
+                  </h2>
+                  <button onClick={resetQuickAIForm} className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem' }}>
+                    Start Over
+                  </button>
+                </div>
+
+                <form onSubmit={handleAISaveDocument}>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label className="form-label">Document Name</label>
+                    <input
+                      type="text"
+                      value={aiDocumentName}
+                      onChange={(e) => setAiDocumentName(e.target.value)}
+                      className="form-input"
+                      required
+                    />
+                  </div>
+
+                  {aiPlaceholders.length > 0 && (
+                    <>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem' }}>
+                        Fill Placeholders ({aiPlaceholders.length})
+                      </h3>
+                      <div className="placeholder-grid" style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '1.5rem' }}>
+                        {aiPlaceholders.map((placeholder) => (
+                          <div key={placeholder} className="form-group-inline">
+                            <label>{placeholder}</label>
+                            {renderPlaceholderInput(placeholder, true)}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                    <button type="button" onClick={handlePreviewAIValues} className="btn btn-secondary" style={{ flex: 1 }}>
+                      <Eye size={16} /> Preview
+                    </button>
+                    <button type="submit" disabled={generatingDoc} className="btn btn-success" style={{ flex: 1 }}>
+                      <Save size={18} /> {generatingDoc ? 'Saving...' : 'Save Document'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+          </div>
+
+          {/* 🆕 AI BULK GENERATION CARD (EXCEL-BASED) */}
+          <div className="card" style={{ marginBottom: '2rem' }}>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '0.75rem' }}>
+              🤖 AI Bulk Document Generation from Excel
+            </h2>
+            <p style={{ fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+              Uses the same <strong>Document Type</strong> as above (<code>{aiDocType || 'not set'}</code>) and
+              row values from the Excel file as context for AI.
+            </p>
+
+            {/* Hidden Excel Input for AI bulk */}
+            <input
+              id="aiExcelInput"
+              type="file"
+              accept=".xlsx,.xls"
+              style={{ display: 'none' }}
+              onChange={(e) => setAiExcelFile(e.target.files?.[0] || null)}
+            />
+
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-secondary"
+                style={{ marginRight: '10px' }}
+                onClick={() => document.getElementById('aiExcelInput').click()}
+                disabled={aiBulkLoading}
+              >
+                {aiExcelFile ? 'Excel Uploaded ✔' : 'Choose Excel File'}
+              </button>
+
+              <button
+                className="btn btn-success"
+                onClick={handleAiBulkGenerate}
+                disabled={!aiExcelFile || aiBulkLoading}
+              >
+                {aiBulkLoading ? 'Generating AI PDFs...' : 'Generate AI PDFs from Excel'}
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', marginTop: '0.5rem', color: '#555' }}>
+              Make sure Excel headers match the placeholders / context keys expected by your AI templates,
+              like <code>Employee Name</code>, <code>Job Title</code>, <code>Salary</code>, etc.
+            </p>
+          </div>
+        </>
+      )}
+
+      {/* ========================= TEMPLATE MODE ========================= */}
       {!quickAIMode && !selectedTemplate && (
         <div className="card" style={{ marginBottom: '2rem' }}>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>📋 Select a Template</h2>
@@ -700,188 +877,174 @@ export default function DocumentGenerator() {
                 <div key={template.id} className="card template-select-card">
                   {template.is_ai_generated && <span className="ai-badge">🤖 AI</span>}
                   <h3>{template.template_name}</h3>
-                  <p>📄 {template.document_type
+                  <p>📄 {template.document_type}</p>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                    <button onClick={() => handlePreviewTemplate(template)} className="btn btn-outline" style={{ flex: 1 }}>
+                      <Eye size={14} /> Preview
+                    </button>
+                    <button onClick={() => handleSelectTemplate(template)} className="btn btn-primary" style={{ flex: 1 }}>
+                      Select
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
-}</p>
-<div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-<button onClick={() => handlePreviewTemplate(template)} className="btn btn-outline" style={{ flex: 1 }}>
-<Eye size={14} /> Preview
-</button>
-<button onClick={() => handleSelectTemplate(template)} className="btn btn-primary" style={{ flex: 1 }}>
-Select
-</button>
-</div>
-</div>
-))}
-</div>
-)}
-</div>
-)}
-  {!quickAIMode && selectedTemplate && (
-    <div className="card" style={{ marginBottom: '2rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
-        <h2>✏️ Fill Template: {selectedTemplate.template_name}</h2>
-        <button onClick={resetTemplateForm} className="btn btn-secondary">Change</button>
-      </div>
-      
-      <form onSubmit={(e) => { e.preventDefault(); handleGenerateFromTemplate(); }}>
-        <input 
-          type="text" 
-          value={documentName} 
-          onChange={(e) => setDocumentName(e.target.value)} 
-          className="form-input" 
-          placeholder="Document name" 
-          style={{ marginBottom: '1rem' }}
-          required 
-        />
+      {!quickAIMode && selectedTemplate && (
+        <div className="card" style={{ marginBottom: '2rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <h2>✏️ Fill Template: {selectedTemplate.template_name}</h2>
+            <button onClick={resetTemplateForm} className="btn btn-secondary">Change</button>
+          </div>
 
-        {placeholders.length > 0 && (
-          <div className="placeholder-grid" style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '1.5rem' }}>
-            {placeholders.map((placeholder) => (
-              <div key={placeholder} className="form-group-inline">
-                <label>{placeholder}</label>
-                {renderPlaceholderInput(placeholder, false)}
+          <form onSubmit={(e) => { e.preventDefault(); handleGenerateFromTemplate(); }}>
+            <input
+              type="text"
+              value={documentName}
+              onChange={(e) => setDocumentName(e.target.value)}
+              className="form-input"
+              placeholder="Document name"
+              style={{ marginBottom: '1rem' }}
+              required
+            />
+
+            {placeholders.length > 0 && (
+              <div className="placeholder-grid" style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: '1.5rem' }}>
+                {placeholders.map((placeholder) => (
+                  <div key={placeholder} className="form-group-inline">
+                    <label>{placeholder}</label>
+                    {renderPlaceholderInput(placeholder, false)}
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button type="button" onClick={handlePreviewWithValues} className="btn btn-secondary" style={{ flex: 1 }}>
+                <Eye size={16} /> Preview
+              </button>
+              <button type="submit" disabled={generatingDoc} className="btn btn-success" style={{ flex: 1 }}>
+                {generatingDoc ? 'Generating...' : 'Generate'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ========================= DOCUMENT LIST ========================= */}
+      <div className="card">
+        <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>📚 Generated Documents</h2>
+        {loadingDocuments ? (
+          <div className="loading"><div className="spinner"></div></div>
+        ) : documents.length === 0 ? (
+          <div className="empty-state"><p>No documents yet.</p></div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {documents.map((doc) => {
+              const hasConfirmedTranslation = activeDocTranslations[doc.id];
+
+              return (
+                <div key={doc.id} className="card document-list-item-card">
+                  <div>
+                    <h3 className="document-name">{doc.document_name}</h3>
+                    <p className="document-meta">
+                      📄 {doc.document_type} • {new Date(doc.created_at).toLocaleDateString()}
+                      {hasConfirmedTranslation && (
+                        <span style={{ marginLeft: '0.5rem', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <CheckCircle size={14} /> {hasConfirmedTranslation.lang.toUpperCase()} Translated
+                        </span>
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="document-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button onClick={() => handlePreviewPDF(doc.id)} className="btn btn-secondary btn-sm">
+                      <Eye size={14} /> Preview
+                    </button>
+                    <button onClick={() => handleDownloadPDF(doc.id, doc.document_name)} className="btn btn-success btn-sm">
+                      <Download size={14} /> Download
+                    </button>
+                    <button onClick={() => handleDeleteDocument(doc.id)} className="btn btn-danger btn-sm">
+                      <Trash2 size={14} /> Delete
+                    </button>
+
+                    <div style={{
+                      marginLeft: '8px',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      display: 'flex',
+                      gap: '8px',
+                      alignItems: 'center'
+                    }}>
+                      <Globe size={16} color="white" />
+                      <select
+                        style={{
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          border: 'none',
+                          fontSize: '0.875rem'
+                        }}
+                        onChange={(e) => {
+                          if (e.target.value && e.target.value !== 'select') {
+                            handleTranslateRequest(doc.id, e.target.value);
+                          }
+                        }}
+                        disabled={translating}
+                      >
+                        <option value="select">Translate to...</option>
+                        {LANGUAGES.map(lang => (
+                          <option key={lang.code} value={lang.code}>
+                            {lang.flag} {lang.label}
+                          </option>
+                        ))}
+                      </select>
+                      {translating && currentDocIdForTranslate === doc.id && (
+                        <div className="spinner-small" style={{ width: '14px', height: '14px' }}></div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
+      </div>
 
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <button type="button" onClick={handlePreviewWithValues} className="btn btn-secondary" style={{ flex: 1 }}>
-            <Eye size={16} /> Preview
-          </button>
-          <button type="submit" disabled={generatingDoc} className="btn btn-success" style={{ flex: 1 }}>
-            {generatingDoc ? 'Generating...' : 'Generate'}
-          </button>
-        </div>
-      </form>
-    </div>
-  )}
-
-  <div className="card">
-    <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>📚 Generated Documents</h2>
-    {loadingDocuments ? (
-      <div className="loading"><div className="spinner"></div></div>
-    ) : documents.length === 0 ? (
-      <div className="empty-state"><p>No documents yet.</p></div>
-    ) : (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        {documents.map((doc) => {
-          const hasConfirmedTranslation = activeDocTranslations[doc.id];
-          
-          return (
-            <div key={doc.id} className="card document-list-item-card">
-              <div>
-                <h3 className="document-name">{doc.document_name}</h3>
-                <p className="document-meta">
-                  📄 {doc.document_type} • {new Date(doc.created_at).toLocaleDateString()}
-                  {hasConfirmedTranslation && (
-                    <span style={{ marginLeft: '0.5rem', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                      <CheckCircle size={14} /> {hasConfirmedTranslation.lang.toUpperCase()} Translated
-                    </span>
-                  )}
-                </p>
-              </div>
-
-              <div className="document-actions" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                {/* EDIT BUTTON (NEW) */}
-                <button onClick={() => handleEditDocument(doc)} className="btn btn-warning btn-sm">
-                  <Pencil size={14} /> Edit
-                </button>
-
-                <button onClick={() => handlePreviewPDF(doc.id)} className="btn btn-secondary btn-sm">
-                  <Eye size={14} /> Preview
-                </button>
-                <button onClick={() => handleDownloadPDF(doc.id, doc.document_name)} className="btn btn-success btn-sm">
-                  <Download size={14} /> Download
-                </button>
-                <button onClick={() => handleDeleteDocument(doc.id)} className="btn btn-danger btn-sm">
-                  <Trash2 size={14} /> Delete
-                </button>
-
-                <div style={{ 
-                  marginLeft: '8px', 
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  display: 'flex',
-                  gap: '8px',
-                  alignItems: 'center'
-                }}>
-                  <Globe size={16} color="white" />
-                  <select
-                    style={{
-                      padding: '4px 8px',
-                      borderRadius: '6px',
-                      border: 'none',
-                      fontSize: '0.875rem'
-                    }}
-                    onChange={(e) => {
-                      if (e.target.value && e.target.value !== 'select') {
-                        handleTranslateRequest(doc.id, e.target.value);
-                      }
-                    }}
-                    disabled={translating}
-                  >
-                    <option value="select">Translate to...</option>
-                    {LANGUAGES.map(lang => (
-                      <option key={lang.code} value={lang.code}>
-                        {lang.flag} {lang.label}
-                      </option>
-                    ))}
-                  </select>
-                  {translating && currentDocIdForTranslate === doc.id && (
-                    <div className="spinner-small" style={{ width: '14px', height: '14px' }}></div>
-                  )}
-                </div>
-              </div>
+      {/* PDF PREVIEW MODAL */}
+      {pdfUrl && (
+        <div className="modal-overlay" onClick={() => setPdfUrl(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', width: '1200px' }}>
+            <div className="modal-header">
+              <h3>PDF Preview</h3>
+              <button onClick={() => setPdfUrl(null)} className="btn-close-modal"><X size={24} /></button>
             </div>
-          );
-        })}
-      </div>
-    )}
-  </div>
+            <div className="modal-body" style={{ padding: 0 }}>
+              <PDFViewer pdfUrl={pdfUrl} />
+            </div>
+          </div>
+        </div>
+      )}
 
-  {/* PDF Preview Modal */}
-  {pdfUrl && (
-    <div className="modal-overlay" onClick={() => setPdfUrl(null)}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', width: '1200px' }}>
-        <div className="modal-header">
-          <h3>PDF Preview</h3>
-          <button onClick={() => setPdfUrl(null)} className="btn-close-modal"><X size={24} /></button>
-        </div>
-        <div className="modal-body" style={{ padding: 0 }}>
-          <PDFViewer pdfUrl={pdfUrl} />
-        </div>
-      </div>
+      {/* TRANSLATION MODAL */}
+      <TranslateModal
+        open={translateModalOpen}
+        onClose={() => {
+          setTranslateModalOpen(false);
+          setTranslatePreview(null);
+          setTranslateConfirmed(false);
+          setTranslationIdSaved(null);
+        }}
+        english={translateEnglish}
+        translated={translatePreview?.translated || ''}
+        lang={currentTranslateLang}
+        confirmed={translateConfirmed}
+        onConfirm={handleTranslateConfirm}
+        onDownload={handleTranslateDownloadPdf}
+      />
     </div>
-  )}
-
-  {/* Translation Modal */}
-  <TranslateModal
-    open={translateModalOpen}
-    onClose={() => {
-      setTranslateModalOpen(false);
-      setTranslatePreview(null);
-      setTranslateConfirmed(false);
-      setTranslationIdSaved(null);
-    }}
-    english={translateEnglish}
-    translated={translatePreview?.translated || ''}
-    lang={currentTranslateLang}
-    confirmed={translateConfirmed}
-    onConfirm={handleTranslateConfirm}
-    onDownload={handleTranslateDownloadPdf}
-  />
-
-  {/* Document Editor Modal (NEW) */}
-  {editingDocument && (
-    <DocumentEditor
-      document={editingDocument}
-      onClose={() => setEditingDocument(null)}
-      onSave={handleEditorSave}
-    />
-  )}
-</div>
   );
 }
