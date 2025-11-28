@@ -209,11 +209,9 @@ class DocumentController {
       return responseHandler.serverError(res, 'Failed to generate document', err);
     }
   }
+
   /* ---------------------------------------------------------
       2. BULK GENERATE FROM EXCEL (TEMPLATE BASED)
-     - Dynamic Excel header matching
-     - Smart filename detection
-     - Generates ZIP of PDFs
   --------------------------------------------------------- */
   async bulkGenerateFromExcel(req, res) {
     try {
@@ -227,16 +225,13 @@ class DocumentController {
         return responseHandler.badRequest(res, 'Excel file is required (field name: "file")');
       }
 
-      // 1) Fetch Template
       const template = await templateModel.findById(template_id);
       if (!template) {
         return responseHandler.notFound(res, 'Template not found');
       }
 
-      // 2) Extract Placeholders
       const placeholders = extractPlaceholdersFromTemplate(template);
 
-      // 3) Parse Excel
       const workbook = xlsx.read(file.buffer, { type: 'buffer' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = xlsx.utils.sheet_to_json(sheet, { defval: '' });
@@ -248,7 +243,6 @@ class DocumentController {
       const excelHeadersRaw = Object.keys(rows[0]);
       const excelHeadersNorm = excelHeadersRaw.map(normalizeKey);
 
-      // 4) Validate placeholders
       const missing = placeholders.filter(ph => {
         const normPh = normalizeKey(ph);
         return !excelHeadersRaw.includes(ph) && !excelHeadersNorm.includes(normPh);
@@ -262,7 +256,6 @@ class DocumentController {
         );
       }
 
-      // 5) Start ZIP
       const zip = new JSZip();
       const templateBase = buildTemplateBaseName(template);
 
@@ -271,14 +264,12 @@ class DocumentController {
       for (const row of rows) {
         rowIndex++;
 
-        // Build normalized header map
         const normHeaderMap = {};
         for (const [key, value] of Object.entries(row)) {
           const nk = normalizeKey(key);
           if (!normHeaderMap[nk]) normHeaderMap[nk] = value;
         }
 
-        // Construct context
         const context = {};
         placeholders.forEach(ph => {
           const normPh = normalizeKey(ph);
@@ -287,7 +278,6 @@ class DocumentController {
           context[ph] = value ?? '';
         });
 
-        // Validate empties
         const emptyFields = placeholders.filter(
           ph => !context[ph] || String(context[ph]).trim() === ''
         );
@@ -299,7 +289,6 @@ class DocumentController {
           );
         }
 
-        // 6) Build Dynamic Filename
         const identifier = getPrimaryIdentifier(context);
         if (!identifier) {
           return responseHandler.error(
@@ -312,7 +301,6 @@ class DocumentController {
         const cleanId = cleanForFilename(identifier);
         const fileName = `${templateBase}_${cleanId}`;
 
-        // 7) Fill template
         let filledContent = { clauses: template.clauses || [] };
 
         filledContent.clauses = template.clauses.map(clause => {
@@ -324,7 +312,6 @@ class DocumentController {
           return { ...clause, content: text };
         });
 
-        // 8) Save Document
         const document = await documentModel.create({
           template_id: template.id,
           document_name: fileName,
@@ -333,17 +320,14 @@ class DocumentController {
           variables: context
         });
 
-        // 9) Generate PDF
         const pdfBuffer = await pdfService.generatePDF(document);
         if (!pdfBuffer) {
           return responseHandler.serverError(res, `PDF generation failed at row ${rowIndex}`);
         }
 
-        // 10) Add to ZIP
         zip.file(`${fileName}.pdf`, pdfBuffer);
       }
 
-      // 11) Send ZIP
       const zipBuffer = await zip.generateAsync({
         type: 'nodebuffer',
         compression: 'DEFLATE',
@@ -363,10 +347,8 @@ class DocumentController {
     }
   }
 
-    /* ---------------------------------------------------------
+  /* ---------------------------------------------------------
       3. AI BULK GENERATE FROM EXCEL 
-     - Excel → AI → Fill placeholders → PDF → ZIP
-     - Fully dynamic & works for ANY document type
   --------------------------------------------------------- */
   async aiBulkGenerateFromExcel(req, res) {
     try {
@@ -380,9 +362,6 @@ class DocumentController {
         return responseHandler.badRequest(res, "Excel file is required");
       }
 
-      // ----------------------------
-      // Parse uploaded Excel
-      // ----------------------------
       const workbook = xlsx.read(file.buffer, { type: "buffer" });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = xlsx.utils.sheet_to_json(sheet, { defval: "" });
@@ -397,15 +376,11 @@ class DocumentController {
       for (const row of rows) {
         rowIndex++;
 
-        // Normalize headers → dict
         const normRow = {};
         Object.entries(row).forEach(([key, value]) => {
           normRow[normalizeKey(key)] = value;
         });
 
-        // ------------------------------------
-        // 1) Generate AI Clauses
-        // ------------------------------------
         const aiResult = await aiService.generateClauses(document_type, row);
 
         if (!aiResult.success || !Array.isArray(aiResult.clauses)) {
@@ -416,9 +391,6 @@ class DocumentController {
           );
         }
 
-        // ------------------------------------
-        // 2) Fill placeholders dynamically
-        // ------------------------------------
         const finalClauses = aiResult.clauses.map(c => {
           let text = c.content;
 
@@ -427,7 +399,6 @@ class DocumentController {
             text = text.replace(placeholderRegex, value);
           });
 
-          // Replace raw header placeholders too
           Object.entries(row).forEach(([rawKey, value]) => {
             const escaped = rawKey.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
             text = text.replace(new RegExp(`\\[${escaped}\\]`, "g"), value);
@@ -436,9 +407,6 @@ class DocumentController {
           return { ...c, content: text };
         });
 
-        // ------------------------------------
-        // 3) Determine Filename Dynamically
-        // ------------------------------------
         const primaryIdentifier =
           row["Employee Name"] ||
           row["Full Name"] ||
@@ -455,9 +423,6 @@ class DocumentController {
         const cleanDocType = document_type.replace(/[^A-Za-z0-9]/g, "");
         const finalFileName = `${cleanDocType}_${cleanIdentifier}`;
 
-        // ------------------------------------
-        // 4) Save Document in DB
-        // ------------------------------------
         const document = await documentModel.create({
           template_id: null,
           document_name: finalFileName,
@@ -466,22 +431,15 @@ class DocumentController {
           variables: row
         });
 
-        // ------------------------------------
-        // 5) Generate PDF from AI content
-        // ------------------------------------
         const pdfBuffer = await pdfService.generatePDF(document);
 
         if (!pdfBuffer || !pdfBuffer.length) {
           return responseHandler.serverError(res, `PDF generation failed at row ${rowIndex}`);
         }
 
-        // Add to ZIP
         zip.file(`${finalFileName}.pdf`, pdfBuffer);
       }
 
-      // ------------------------------------
-      // 6) ZIP + Respond
-      // ------------------------------------
       const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
 
       res.set({
@@ -497,7 +455,7 @@ class DocumentController {
     }
   }
 
-    /* ---------------------------------------------------------
+  /* ---------------------------------------------------------
       4. GET ALL DOCUMENTS
   --------------------------------------------------------- */
   async getAllDocuments(req, res) {
@@ -590,7 +548,6 @@ class DocumentController {
       const document = await documentModel.findById(id);
       if (!document) return responseHandler.notFound(res, "Document not found");
 
-      // Build English content
       let english = "";
       if (document.content_json?.clauses) {
         english = document.content_json.clauses.map(c => c.content).join("\n\n");
@@ -602,7 +559,6 @@ class DocumentController {
         return responseHandler.success(res, { text: english });
       }
 
-      // Fetch saved translation
       const [rows] = await pool.execute(
         `SELECT content FROM translations
          WHERE original_id = ? AND original_type = 'document' AND lang = ? AND status = 'confirmed'
@@ -649,7 +605,6 @@ class DocumentController {
         return document.document_name;
       };
 
-      // Case 1 → English PDF only
       if (lang === "en") {
         const pdf = await pdfService.generatePDF(document);
         res.set({
@@ -659,7 +614,6 @@ class DocumentController {
         return res.send(pdf);
       }
 
-      // Get translated text
       let translated = null;
 
       if (translationId) {
@@ -684,7 +638,6 @@ class DocumentController {
         return responseHandler.badRequest(res, "No confirmed translation available");
       }
 
-      // Case 2 → Non-bilingual single-language translated PDF
       if (lang !== "both") {
         const translatedDoc = {
           ...document,
@@ -701,7 +654,6 @@ class DocumentController {
         return res.send(pdf);
       }
 
-      // Case 3 → BILINGUAL PDF
       const englishText = assembleEnglish();
 
       const html = `
