@@ -10,9 +10,11 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+// bdm-frontend/src/services/api.js - Clauses API section only
+// (Keep your other API sections - templates, documents, etc.)
 
-// --- Clauses API ---
 export const clausesAPI = {
+  // Basic CRUD
   getAll: (params = {}) => api.get('/clauses', { params }),
   getById: (id) => api.get(`/clauses/${id}`),
   getByCategory: (category) => api.get(`/clauses/category/${category}`),
@@ -21,33 +23,56 @@ export const clausesAPI = {
     api.post('/clauses/manual', {
       clause_type: data.clause_type,
       content: data.content,
+      content_html: data.content_html,
       category: data.category,
+      is_sample: data.is_sample || false
     }),
 
+  update: (id, data) =>
+    api.put(`/clauses/${id}`, data),
+
+  delete: (id) => api.delete(`/clauses/${id}`),
+
+  // Merge operations
+
+mergeClauses: (payload) =>
+  api.post('/clauses/merge', {
+    clause_ids: payload.clause_ids,
+    clause_type: payload.clause_type,
+    category: payload.category,
+    is_sample: payload.is_sample || false
+  }),
+
+  getMergedClauses: (params = {}) =>
+    api.get('/clauses/merged/all', { params }),
+
+  // Sample operations
+  getAllSamples: (params = {}) =>
+    api.get('/clauses/samples', { params }),
+
+  markAsSample: (id, is_sample) =>
+    api.post(`/clauses/${id}/mark-sample`, { is_sample }),
+
+  cloneSample: (id, data) =>
+    api.post(`/clauses/${id}/clone-sample`, data),
+
+  // AI operations
   generateAI: (data) =>
     api.post('/clauses/generate-ai', {
       document_type: data.document_type || 'general',
       category: data.category || 'general',
-      context: data.context || {},
+      context: data.context || {}
     }),
 
   generateSingleAI: (data) =>
     api.post('/clauses/generate-single-ai', {
       clause_type: data.clause_type,
       category: data.category,
-      context: data.context || {},
+      context: data.context || {}
     }),
 
-  saveAIGenerated: (data) => api.post('/clauses/save-ai-generated', { clauses: data }),
-
-  update: (id, data) =>
-    api.put(`/clauses/${id}`, {
-      clause_type: data.clause_type,
-      content: data.content,
-      category: data.category,
-    }),
-
-  delete: (id) => api.delete(`/clauses/${id}`),
+  saveAIGenerated: (clauses) =>
+    api.post('/clauses/save-ai-generated', { clauses }),
 };
 
 // --- Templates API ---
@@ -71,7 +96,6 @@ export const templatesAPI = {
   removeClause: (id, clauseId) => api.delete(`/templates/${id}/remove-clause/${clauseId}`),
 };
 
-// --- Documents API ---
 // --- Documents API ---
 export const documentsAPI = {
   getAll: (params = {}) => api.get('/documents', { params }),

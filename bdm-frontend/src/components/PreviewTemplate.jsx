@@ -1,13 +1,20 @@
+// bdm-frontend/src/components/PreviewTemplate.jsx
+
 import React, { useState } from "react";
 import { X, ChevronDown, ChevronUp, FileText } from "lucide-react";
 
 export default function PreviewTemplate({ template, onClose }) {
-  if (!template) return null;
+  if (!template) return null;
 
-  const [openClauseIndex, setOpenClauseIndex] = useState(null);
+  const [openClauseIndex, setOpenClauseIndex] = useState(null);
 
-  const toggleClause = (index) => {
-    setOpenClauseIndex(openClauseIndex === index ? null : index);
+  const toggleClause = (index) => {
+    setOpenClauseIndex(openClauseIndex === index ? null : index);
+  };
+  
+  // NOTE: This assumes an export mechanism exists on the backend to create a PDF from the template structure
+  const handleExportPDF = () => {
+    alert("PDF export functionality is not fully implemented in the frontend snippet. You would typically call a backend API endpoint here.");
   };
 
   const handleExportPDF = () => {

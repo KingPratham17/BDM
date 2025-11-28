@@ -15,25 +15,25 @@ import PreviewTemplate from "./PreviewTemplate";
  */
 
 const LANGUAGES = [
-  { code: 'es', label: 'Spanish', flag: '🇪🇸' },
-  { code: 'fr', label: 'French', flag: '🇫🇷' },
-  { code: 'de', label: 'German', flag: '🇩🇪' },
-  { code: 'pt', label: 'Portuguese', flag: '🇵🇹' },
-  { code: 'zh', label: 'Chinese', flag: '🇨🇳' },
-  { code: 'ru', label: 'Russian', flag: '🇷🇺' },
-  { code: 'ar', label: 'Arabic', flag: '🇸🇦' },
-  { code: 'ja', label: 'Japanese', flag: '🇯🇵' },
-  // === INDIAN LANGUAGES ===
-  { code: 'hi', label: 'Hindi', flag: '🇮🇳' },
-  { code: 'bn', label: 'Bengali', flag: '🇮🇳' },
-  { code: 'te', label: 'Telugu', flag: '🇮🇳' },
-  { code: 'mr', label: 'Marathi', flag: '🇮🇳' },
-  { code: 'ta', label: 'Tamil', flag: '🇮🇳' },
-  { code: 'gu', label: 'Gujarati', flag: '🇮🇳' },
-  { code: 'kn', label: 'Kannada', flag: '🇮🇳' },
-  { code: 'ml', label: 'Malayalam', flag: '🇮🇳' },
-  { code: 'pa', label: 'Punjabi', flag: '🇮🇳' },
-  { code: 'ur', label: 'Urdu', flag: '🇮🇳' },
+  { code: 'es', label: 'Spanish', flag: '🇪🇸' },
+  { code: 'fr', label: 'French', flag: '🇫🇷' },
+  { code: 'de', label: 'German', flag: '🇩🇪' },
+  { code: 'pt', label: 'Portuguese', flag: '🇵🇹' },
+  { code: 'zh', label: 'Chinese', flag: '🇨🇳' },
+  { code: 'ru', label: 'Russian', flag: '🇷🇺' },
+  { code: 'ar', label: 'Arabic', flag: '🇸🇦' },
+  { code: 'ja', label: 'Japanese', flag: '🇯🇵' },
+  // === INDIAN LANGUAGES ===
+  { code: 'hi', label: 'Hindi', flag: '🇮🇳' },
+  { code: 'bn', label: 'Bengali', flag: '🇮🇳' },
+  { code: 'te', label: 'Telugu', flag: '🇮🇳' },
+  { code: 'mr', label: 'Marathi', flag: '🇮🇳' },
+  { code: 'ta', label: 'Tamil', flag: '🇮🇳' },
+  { code: 'gu', label: 'Gujarati', flag: '🇮🇳' },
+  { code: 'kn', label: 'Kannada', flag: '🇮🇳' },
+  { code: 'ml', label: 'Malayalam', flag: '🇮🇳' },
+  { code: 'pa', label: 'Punjabi', flag: '🇮🇳' },
+  { code: 'ur', label: 'Urdu', flag: '🇮🇳' },
 ];
 
 export default function DocumentGenerator() {
