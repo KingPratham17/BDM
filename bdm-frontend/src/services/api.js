@@ -72,11 +72,11 @@ export const templatesAPI = {
 };
 
 // --- Documents API ---
+// --- Documents API ---
 export const documentsAPI = {
   getAll: (params = {}) => api.get('/documents', { params }),
   getById: (id) => api.get(`/documents/${id}`),
 
-  // --- CORRECTED generate function ---
   generate: (data) => {
     const payload = {
       document_name: data.document_name || `Document_${Date.now()}`,
@@ -84,42 +84,58 @@ export const documentsAPI = {
       context: data.variables || data.context || {},
     };
 
-    if (data.template_id) {
-      payload.template_id = data.template_id;
-    }
+    if (data.template_id) payload.template_id = data.template_id;
+    if (data.content_json) payload.content_json = data.content_json;
 
-    if (data.content_json) {
-      payload.content_json = data.content_json;
-    }
-
-    console.log('Sending payload to POST /documents/generate-document:', payload);
     return api.post('/documents/generate-document', payload);
   },
 
   update: (id, data) => api.put(`/documents/${id}`, data),
   delete: (id) => api.delete(`/documents/${id}`),
 
-  // ----- Translation & PDF helpers -----
+  // ⭐ TEMPLATE BULK EXCEL
+  bulkGenerateFromExcel: (templateId, file) => {
+    const formData = new FormData();
+    formData.append('template_id', templateId);
+    formData.append('file', file);
 
-  // Request a translation preview for a document (creates translation_previews row)
+    return api.post('/documents/bulk-generate-from-excel', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      responseType: 'blob',
+    });
+  },
+
+  // ⭐ AI BULK EXCEL
+  aiBulkGenerateFromExcel: (documentType, excelFile) => {
+    const formData = new FormData();
+    formData.append("file", excelFile);
+    formData.append("document_type", documentType);
+
+    return api.post('/documents/ai-bulk-generate-from-excel', formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+      responseType: "blob",
+    });
+  },
+
+  // ⭐ TRANSLATION
   translatePreview: (documentId, lang) =>
     api.post(`/documents/${documentId}/translate-preview`, { lang }),
 
-  // Confirm a previously-created preview (persist to translations table)
   translateConfirm: (previewId) =>
     api.post(`/documents/translate-confirm`, { previewId }),
 
-  // Get assembled document content (english or a confirmed translation)
-  // e.g. documentsAPI.getContent(docId, 'en') or ('es')
   getContent: (documentId, lang = 'en') =>
     api.get(`/documents/${documentId}/content`, { params: { lang } }),
 
-  // Generate PDF for the document.
-  // body: { lang: 'en'|'es'|'both', translationId?, filename? }
-  // returns axios response with blob data
   generatePdf: (documentId, body = { lang: 'en' }) =>
-    api.post(`/documents/${documentId}/generate-pdf`, body, { responseType: 'blob' }),
+    api.post(`/documents/${documentId}/generate-pdf`, body, {
+      responseType: 'blob',
+    }),
 };
+
+
 
 // --- PDF API (existing) ---
 export const pdfAPI = {
