@@ -7,7 +7,12 @@ import PDFViewer from './PDFViewer';
 import TranslateModal from './TranslateModal';
 import DocumentEditor from './DocumentEditor';
 
-// ===== LANGUAGES WITH INDIAN LANGUAGES =====
+/**
+ * DocumentGenerator — Single-file optimized version
+ * - Preserves all existing features (AI generation, templates, translation, PDF, edit)
+ * - Fixes AI button misalignment by adding a dedicated toolbar container
+ */
+
 const LANGUAGES = [
   { code: 'es', label: 'Spanish', flag: '🇪🇸' },
   { code: 'fr', label: 'French', flag: '🇫🇷' },
