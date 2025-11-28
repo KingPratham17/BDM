@@ -1,44 +1,214 @@
 // bdm-frontend/src/components/ClauseManager.jsx
-
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { clausesAPI } from '../services/api';
 import AIButton from './AIButton';
-import { Pencil, Trash2, PlusCircle } from 'lucide-react';
+import {
+  Pencil, Trash2, PlusCircle, Sparkles, Eye, X,
+  GitMerge, Star, Copy, Check
+} from 'lucide-react';
+import '../styles/ClauseManager.css';
 
 // Initial form state
-const emptyClause = { id: null, clause_type: '', content: '', category: '' };
+const emptyClause = {
+  id: null,
+  clause_type: '',
+  content: '',
+  content_html: '', // Added content_html for RTE
+  category: '',
+  is_sample: false
+};
 
+// ====================================
+// Rich Text Editor Component (from main branch)
+// ====================================
+function RichTextEditor({ value, onChange, placeholder }) {
+  const editorRef = useRef(null);
+  const [active, setActive] = useState({
+    bold: false,
+    italic: false,
+    underline: false,
+    ul: false,
+    ol: false
+  });
+
+  useEffect(() => {
+    if (editorRef.current && value !== undefined) {
+      // Only update innerHTML if the value changes and it's different from the current content
+      if (editorRef.current.innerHTML !== value) {
+        editorRef.current.innerHTML = value || '';
+      }
+    }
+  }, [value]);
+
+  const updateActiveState = () => {
+    // Check command state only if the editor is focused or has focus recently to avoid errors
+    if (editorRef.current && editorRef.current === document.activeElement) {
+      setActive({
+        bold: document.queryCommandState("bold"),
+        italic: document.queryCommandState("italic"),
+        underline: document.queryCommandState("underline"),
+        ul: document.queryCommandState("insertUnorderedList"),
+        ol: document.queryCommandState("insertOrderedList"),
+      });
+    }
+  };
+
+  const execCommand = (cmd) => {
+    document.execCommand(cmd, false, null);
+    editorRef.current?.focus();
+    updateActiveState();
+    // Fire onChange immediately after command execution
+    onChange(editorRef.current.innerHTML);
+  };
+
+  const handleInput = () => {
+    updateActiveState();
+    onChange(editorRef.current.innerHTML);
+  };
+
+  const handlePaste = (e) => {
+    e.preventDefault();
+    // Insert plain text on paste to strip formatting
+    const text = e.clipboardData.getData("text/plain");
+    document.execCommand("insertText", false, text);
+  };
+
+  // Listen for mouse up and key up to update active states
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (editor) {
+      editor.addEventListener('mouseup', updateActiveState);
+      editor.addEventListener('keyup', updateActiveState);
+      return () => {
+        editor.removeEventListener('mouseup', updateActiveState);
+        editor.removeEventListener('keyup', updateActiveState);
+      };
+    }
+  }, []);
+
+
+  return (
+    <div className="rte-wrapper">
+
+      {/* Toolbar */}
+      <div className="rte-toolbar">
+        <button
+          type="button"
+          className={active.bold ? "active" : ""}
+          onClick={() => execCommand("bold")}
+        >
+          <strong>B</strong>
+        </button>
+
+        <button
+          type="button"
+          className={active.italic ? "active" : ""}
+          onClick={() => execCommand("italic")}
+        >
+          <em>I</em>
+        </button>
+
+        <button
+          type="button"
+          className={active.underline ? "active" : ""}
+          onClick={() => execCommand("underline")}
+        >
+          <u>U</u>
+        </button>
+
+        <button
+          type="button"
+          className={active.ul ? "active" : ""}
+          onClick={() => execCommand("insertUnorderedList")}
+        >
+          •
+        </button>
+
+        <button
+          type="button"
+          className={active.ol ? "active" : ""}
+          onClick={() => execCommand("insertOrderedList")}
+        >
+          1.
+        </button>
+      </div>
+
+      {/* Editor */}
+      <div
+        ref={editorRef}
+        className="rte-editor"
+        contentEditable
+        onInput={handleInput}
+        onPaste={handlePaste}
+        // onClick and onKeyUp are handled by useEffect listener now
+        data-placeholder={placeholder}
+        suppressContentEditableWarning
+      ></div>
+    </div>
+  );
+}
+
+
+// ====================================
+// Main ClauseManager Component
+// ====================================
 export default function ClauseManager() {
   const [clauses, setClauses] = useState([]);
-  const [formData, setFormData] = useState(emptyClause);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSingleLoading, setAiSingleLoading] = useState(false);
 
+  // Form state
+  const [formData, setFormData] = useState(emptyClause);
+
+  // Filter state
+  const [view, setView] = useState('normal'); // Added view state
   const [filterCategory, setFilterCategory] = useState('');
+
+  // Notification state
   const [notification, setNotification] = useState(null);
 
-  // Modal states
-  const [showModal, setShowModal] = useState(false);
-  const [modalType, setModalType] = useState(null); // "single" | "fullset"
-  const [modalInputs, setModalInputs] = useState({
-    clause_type: '',
-    category: '',
-    document_type: ''
-  });
+  // Merge state
+  const [mergeMode, setMergeMode] = useState(false);
+  const [selectedForMerge, setSelectedForMerge] = useState([]);
+  const [pendingMerge, setPendingMerge] = useState(null);
+
+  // Drag and drop state
+  const [draggedClause, setDraggedClause] = useState(null);
+  const [dragOverClause, setDragOverClause] = useState(null);
+
+  // Preview state
+  const [previewClause, setPreviewClause] = useState(null);
 
   useEffect(() => {
     loadClauses();
   }, []);
 
-  // --- Notification helper ---
+  // ====================================
+  // Helper Functions
+  // ====================================
   const showNotification = (message, type = 'info') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
   };
 
   // --- Fetch all clauses ---
+  const resetForm = () => {
+    setFormData(emptyClause);
+  };
+
+  const exitMergeMode = () => {
+    setMergeMode(false);
+    setSelectedForMerge([]);
+    setPendingMerge(null);
+    setDraggedClause(null);
+    setDragOverClause(null);
+  };
+
+  // ====================================
+  // Data Loading
+  // ====================================
   const loadClauses = async () => {
     try {
       setLoading(true);
@@ -52,23 +222,41 @@ export default function ClauseManager() {
     }
   };
 
-  // --- Save clause ---
+  // ====================================
+  // CRUD Operations
+  // ====================================
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.clause_type || !formData.content || !formData.category) {
-      return showNotification('Please fill all fields', 'error');
+
+    if (!formData.clause_type || !formData.category || !formData.content_html) {
+      return showNotification('Please fill all required fields (Clause Type, Category, Content)', 'error');
     }
 
     setSaving(true);
     try {
+      // Extract plain text from HTML
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = formData.content_html;
+      const plainText = tempDiv.textContent || tempDiv.innerText || '';
+
+      const payload = {
+        clause_type: formData.clause_type,
+        // Save both plain text and HTML content
+        content: plainText,
+        content_html: formData.content_html,
+        category: formData.category,
+        is_sample: formData.is_sample
+      };
+
       if (formData.id) {
-        await clausesAPI.update(formData.id, formData);
+        await clausesAPI.update(formData.id, payload); // Use payload here
         showNotification('Clause updated successfully!', 'success');
       } else {
-        await clausesAPI.createManual(formData);
+        await clausesAPI.createManual(payload); // Use payload here
         showNotification('Clause created successfully!', 'success');
       }
-      setFormData(emptyClause);
+
+      resetForm();
       loadClauses();
     } catch (error) {
       console.error('Failed to save clause:', error);
@@ -80,15 +268,20 @@ export default function ClauseManager() {
 
   // --- Edit ---
   const handleEdit = (clause) => {
-    setFormData(clause);
-    window.scrollTo(0, 0);
+    setFormData({
+      id: clause.id,
+      clause_type: clause.clause_type || '',
+      content: clause.content || '',
+      // Use content_html if available, otherwise use plain content
+      content_html: clause.content_html || clause.content || '',
+      category: clause.category || '',
+      is_sample: !!clause.is_sample // Ensure boolean
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // --- Cancel editing ---
-  const handleCancelEdit = () => setFormData(emptyClause);
-
-  // --- Delete clause (unchanged as per your request) ---
-  const handleDeleteClause = async (id) => {
+  // --- Delete clause ---
+  const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this clause?')) return;
 
     try {
@@ -96,276 +289,712 @@ export default function ClauseManager() {
       loadClauses();
       showNotification('Clause deleted', 'success');
 
-      if (formData.id === id) setFormData(emptyClause);
+      if (formData.id === id) {
+        resetForm();
+      }
     } catch (error) {
       console.error('Failed to delete clause:', error);
       showNotification('Failed to delete clause', 'error');
     }
   };
 
-  // =============== AI MODALS ===================
-
-  const openSingleModal = () => {
-    setModalType('single');
-    setModalInputs({ clause_type: '', category: '' });
-    setShowModal(true);
+  // ====================================
+  // Merge Operations (from main branch)
+  // ====================================
+  const toggleMergeSelection = (clause) => {
+    if (selectedForMerge.some(c => c.id === clause.id)) {
+      setSelectedForMerge(prev => prev.filter(c => c.id !== clause.id));
+    } else {
+      setSelectedForMerge(prev => [...prev, clause]);
+    }
   };
 
-  const openFullSetModal = () => {
-    setModalType('fullset');
-    setModalInputs({ document_type: '' });
-    setShowModal(true);
-  };
-
-  const handleModalSubmit = async () => {
-    if (modalType === "single") {
-      if (!modalInputs.clause_type || !modalInputs.category) {
-        showNotification("Fill all fields", "error");
-        return;
-      }
-      try {
-        setAiSingleLoading(true);
-        await clausesAPI.generateSingleAI({
-          clause_type: modalInputs.clause_type,
-          category: modalInputs.category
-        });
-
-        loadClauses();
-        showNotification(`AI clause "${modalInputs.clause_type}" saved!`, 'success');
-        setShowModal(false);
-      } catch (error) {
-        console.error("AI single generation failed:", error);
-        showNotification("AI generation failed", "error");
-      } finally {
-        setAiSingleLoading(false);
-      }
+  const handleMergeSelected = () => {
+    if (selectedForMerge.length < 2) {
+      return showNotification('Select at least 2 clauses to merge', 'error');
     }
 
-    if (modalType === "fullset") {
-      if (!modalInputs.document_type) {
-        showNotification("Enter document type", "error");
-        return;
-      }
-      try {
-        setAiLoading(true);
+    // Get types and join with a descriptive string
+    const clauseTypes = selectedForMerge.map(c => c.clause_type);
+    const clause_type = clauseTypes.length > 3
+        ? `${clauseTypes.slice(0, 3).join(', ')} and ${clauseTypes.length - 3} others`
+        : clauseTypes.join('_and_');
 
-        const res = await clausesAPI.generateAI({
-          document_type: modalInputs.document_type,
-          category: modalInputs.document_type
-        });
+    const category = `merged_${selectedForMerge[0].category || 'general'}`;
 
-        const generatedClauses = res.data.data.clauses;
+    setPendingMerge({
+      clause_ids: selectedForMerge.map(c => c.id),
+      clause_type: clause_type,
+      category: category,
+      sources: selectedForMerge
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-        if (generatedClauses && generatedClauses.length > 0) {
-          const preview = generatedClauses
-            .map((c, i) => `${i + 1}. ${c.clause_type}: ${c.content.substring(0, 100)}...`)
-            .join("\n\n");
 
-          if (window.confirm(`Generated ${generatedClauses.length} clauses:\n\n${preview}\n\nSave?`)) {
-            await clausesAPI.saveAIGenerated(generatedClauses);
-            loadClauses();
-            showNotification("AI clauses saved!", "success");
-          }
+  const confirmMerge = async () => {
+    if (!pendingMerge) return;
+
+    const clause_ids = pendingMerge.clause_ids;
+    const clause_type = pendingMerge.clause_type;
+    const category = pendingMerge.category;
+
+    try {
+      // NOTE: Assuming clausesAPI.mergeClauses takes a list of IDs and new metadata
+      await clausesAPI.mergeClauses({
+        clause_ids,
+        clause_type,
+        category,
+        is_sample: false
+      });
+
+      showNotification('Clauses merged successfully!', 'success');
+
+      exitMergeMode();
+      loadClauses();
+    } catch (error) {
+      console.error('Merge failed:', error);
+      showNotification('Failed to merge clauses', 'error');
+    }
+  };
+
+
+  // ====================================
+  // Drag and Drop (for merge) (from main branch)
+  // ====================================
+  const handleDragStart = (e, clause) => {
+    if (!mergeMode) return;
+    setDraggedClause(clause);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e, clause) => {
+    if (!mergeMode || !draggedClause || draggedClause.id === clause.id) return;
+    e.preventDefault();
+    setDragOverClause(clause);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverClause(null);
+  };
+
+  const handleDrop = (e, targetClause) => {
+    e.preventDefault();
+
+    if (!draggedClause || draggedClause.id === targetClause.id) {
+      setDraggedClause(null);
+      setDragOverClause(null);
+      return;
+    }
+
+    // Build merge payload for two clauses
+    setPendingMerge({
+      clause_ids: [draggedClause.id, targetClause.id],
+      clause_type: `${draggedClause.clause_type}_and_${targetClause.clause_type}`,
+      category: `merged_${draggedClause.category || targetClause.category}`,
+      sources: [draggedClause, targetClause]
+    });
+
+    setDraggedClause(null);
+    setDragOverClause(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+
+  // ====================================
+  // Sample Operations (from main branch)
+  // ====================================
+  const toggleSample = async (clause) => {
+    try {
+      await clausesAPI.markAsSample(clause.id, !clause.is_sample);
+      showNotification(
+        clause.is_sample ? 'Unmarked as sample' : 'Marked as sample',
+        'success'
+      );
+      loadClauses();
+    } catch (error) {
+      console.error('Failed to toggle sample:', error);
+      showNotification('Failed to update sample status', 'error');
+    }
+  };
+
+  const cloneSample = async (clause) => {
+    const newCategory = window.prompt('Enter category for cloned clause:', clause.category);
+    if (!newCategory) return;
+
+    try {
+      await clausesAPI.cloneSample(clause.id, { category: newCategory });
+      showNotification('Sample cloned successfully', 'success');
+      loadClauses();
+    } catch (error) {
+      console.error('Failed to clone sample:', error);
+      showNotification('Failed to clone sample', 'error');
+    }
+  };
+
+  // ====================================
+  // AI Operations (combined logic)
+  // ====================================
+  const handleAIGenerateFullSet = async () => {
+    const docType = window.prompt('Enter document type (e.g., offer_letter, nda):');
+    if (!docType) {
+      showNotification("Document type required", "error");
+      return;
+    }
+
+    try {
+      setAiLoading(true);
+      const res = await clausesAPI.generateAI({
+        document_type: docType,
+        category: docType
+      });
+
+      const generatedClauses = res.data.data.clauses;
+
+      if (generatedClauses && generatedClauses.length > 0) {
+        const preview = generatedClauses.map((c, i) =>
+          `${i + 1}. ${c.clause_type}: ${(c.content || '').substring(0, 80)}...`
+        ).join('\n\n');
+
+        if (window.confirm(
+          `Generated ${generatedClauses.length} clauses for "${docType}":\n\n${preview}\n\nSave these clauses?`
+        )) {
+          await clausesAPI.saveAIGenerated(generatedClauses);
+          loadClauses();
+          showNotification('AI clauses saved!', 'success');
         }
-
-        setShowModal(false);
-      } catch (error) {
-        console.error("AI full set generation failed:", error);
-        showNotification("AI generation failed", "error");
-      } finally {
-        setAiLoading(false);
+      } else {
+        showNotification("AI generated no clauses for this document type.", "info");
       }
+    } catch (error) {
+      console.error("AI full set generation failed:", error);
+      showNotification("AI generation failed", "error");
+    } finally {
+      setAiLoading(false);
     }
   };
 
-  // =============== GROUP CLAUSES ===============
+  const handleAIGenerateSingle = async () => {
+    const clause_type = window.prompt('Enter clause type (e.g., "Confidentiality"):');
+    if (!clause_type) {
+      showNotification("Clause type required", "error");
+      return;
+    }
+
+    const category = window.prompt('Enter category (e.g., "nda"):');
+    if (!category) {
+      showNotification("Category required", "error");
+      return;
+    }
+
+    try {
+      setAiSingleLoading(true);
+      // NOTE: Changed to generateSingleAI (assuming this creates and saves one directly)
+      const res = await clausesAPI.generateSingleAI({
+        clause_type: clause_type,
+        category: category
+      });
+
+      // Assuming API returns the created clause or a confirmation
+      loadClauses();
+      showNotification(`AI clause "${clause_type}" saved!`, 'success');
+    } catch (error) {
+      console.error("AI single generation failed:", error);
+      showNotification("AI generation failed", "error");
+    } finally {
+      setAiSingleLoading(false);
+    }
+  };
+
+
+  // ====================================
+  // Data Grouping and Filtering
+  // ====================================
   const groupedClauses = useMemo(() => {
-    const groups = clauses.reduce((acc, clause) => {
+    let filteredList = clauses;
+
+    // First filter by category text input
+    if (filterCategory) {
+      filteredList = clauses.filter(c =>
+        c.category?.toLowerCase().includes(filterCategory.toLowerCase())
+      );
+    }
+
+    // Group the filtered list
+    return filteredList.reduce((acc, clause) => {
       const category = clause.category || 'Uncategorized';
       if (!acc[category]) acc[category] = [];
       acc[category].push(clause);
       return acc;
     }, {});
-
-    if (!filterCategory) return groups;
-
-    const filtered = {};
-    for (const cat in groups) {
-      if (cat.toLowerCase().includes(filterCategory.toLowerCase())) {
-        filtered[cat] = groups[cat];
-      }
-    }
-    return filtered;
   }, [clauses, filterCategory]);
 
-  // ================= SIMPLE MODAL =================
-  const SimpleModal = ({ title, children, onSubmit, onClose }) => (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,0.45)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 9999
-    }}>
-      <div style={{
-        background: 'white',
-        padding: '2rem',
-        borderRadius: '12px',
-        width: '450px',
-        maxWidth: '90%',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
-      }}>
-        <h2 style={{ marginBottom: '1.5rem', fontWeight: 700 }}>{title}</h2>
-        {children}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', gap: '1rem' }}>
-          <button
-            onClick={onClose}
-            style={{
-              background: '#64748b',
-              color: 'white',
-              padding: '0.5rem 1.2rem',
-              borderRadius: '8px',
-              border: 'none'
-            }}>
-            Cancel
-          </button>
-
-          <button
-            onClick={onSubmit}
-            style={{
-              background: '#2563eb',
-              color: 'white',
-              padding: '0.5rem 1.2rem',
-              borderRadius: '8px',
-              border: 'none'
-            }}>
-            Submit
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  // ================== RENDER ==================
+  // ====================================
+  // Render
+  // ====================================
   return (
-    <div>
-      <h1 style={{ fontSize: '2rem', fontWeight: 700 }}>📜 Clause Manager</h1>
+    <div style={{ padding: '1.5rem' }}>
+      <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '1.5rem' }}>
+        📜 Clause Manager
+        {mergeMode && (
+          <span style={{
+            marginLeft: '1rem',
+            fontSize: '0.875rem',
+            padding: '0.25rem 0.75rem',
+            background: '#fef3c7',
+            color: '#92400e',
+            borderRadius: '9999px'
+          }}>
+            MERGE MODE
+          </span>
+        )}
+      </h1>
 
+      {/* Notification */}
       {notification && (
-        <div className={`alert alert-${notification.type}`}>
+        <div className={`alert alert-${notification.type}`} style={{ marginBottom: '1rem' }}>
           {notification.message}
         </div>
       )}
 
-      {/* FORM */}
-      <div className="card" style={{ marginBottom: "2rem" }}>
-        <h2 style={{ fontSize: "1.25rem", marginBottom: "1rem" }}>
-          {formData.id ? "Edit Clause" : "Create New Clause"}
-        </h2>
-
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: "grid", gap: "1rem" }}>
-            <input
-              type="text"
-              className="input"
-              placeholder="Clause Type"
-              value={formData.clause_type}
-              onChange={(e) => setFormData({ ...formData, clause_type: e.target.value })}
-            />
-
-            <textarea
-              rows="4"
-              className="textarea"
-              placeholder="Clause Content..."
-              value={formData.content}
-              onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-            />
-
-            <input
-              type="text"
-              className="input"
-              placeholder="Category"
-              value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-            />
-
-            <div style={{ display: "flex", gap: "1rem" }}>
-              <button
-                type="submit"
-                disabled={saving}
-                style={{
-                  background: "#10b981",
-                  color: "white",
-                  padding: "0.6rem 1.2rem",
-                  borderRadius: "8px",
-                  border: "none"
-                }}>
-                <PlusCircle size={16} />
-                {saving ? "Saving..." : formData.id ? "Save Changes" : "Add Clause"}
-              </button>
-
-              {formData.id && (
-                <button
-                  type="button"
-                  onClick={handleCancelEdit}
-                  style={{
-                    background: "#64748b",
-                    color: "white",
-                    padding: "0.6rem 1.2rem",
-                    borderRadius: "8px",
-                    border: "none"
-                  }}>
-                  Cancel Edit
-                </button>
-              )}
-            </div>
+      {/* Pending Merge Confirmation Bar */}
+      {pendingMerge && (
+        <div style={{
+          background: '#fef3c7',
+          border: '1px solid #fbbf24',
+          borderRadius: '8px',
+          padding: '1rem',
+          marginBottom: '1rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div>
+            <strong>Merge Ready:</strong>{' '}
+            {pendingMerge.sources.map(s => s.clause_type).join(' + ')} →{' '}
+            <em>{pendingMerge.clause_type}</em>
+            <span style={{ color: '#6b7280', marginLeft: '0.5rem' }}>
+              (category: {pendingMerge.category})
+            </span>
           </div>
-        </form>
-
-        {/* AI BUTTONS */}
-        <div style={{ marginTop: "1rem", borderTop: "1px solid #e2e8f0", paddingTop: "1rem", display: "flex", gap: "1rem" }}>
-          <AIButton label="Generate Single Clause (AI)" onClick={openSingleModal} loading={aiSingleLoading} />
-          <AIButton label="Generate Full Set (AI)" onClick={openFullSetModal} loading={aiLoading} />
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              onClick={() => setPendingMerge(null)}
+              className="btn btn-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmMerge}
+              className="btn btn-success"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              <GitMerge size={16} /> Confirm Merge
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* Action Bar */}
+      <div style={{
+        display: 'flex',
+        gap: '0.75rem',
+        marginBottom: '1.5rem',
+        flexWrap: 'wrap',
+        alignItems: 'center'
+      }}>
+        <button
+          onClick={() => mergeMode ? exitMergeMode() : setMergeMode(true)}
+          className={`btn ${mergeMode ? 'btn-warning' : 'btn-outline'}`}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+        >
+          <GitMerge size={16} />
+          {mergeMode ? 'Exit Merge Mode' : 'Merge Mode'}
+        </button>
+
+        {mergeMode && selectedForMerge.length >= 2 && (
+          <button
+            onClick={handleMergeSelected}
+            className="btn btn-success"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            <GitMerge size={16} />
+            Merge {selectedForMerge.length} Selected
+          </button>
+        )}
+
+        <AIButton
+          onClick={handleAIGenerateSingle}
+          loading={aiSingleLoading}
+          label="Generate Single (AI)"
+        />
+
+        <AIButton
+          onClick={handleAIGenerateFullSet}
+          loading={aiLoading}
+          label="Generate Full Set (AI)"
+        />
       </div>
 
-      {/* FILTER */}
+  {/* Create/Edit Clause Card */}
+<div className="clause-card">
+  <h2 className="clause-card-title">
+    {formData.id ? '✏️ Edit Clause' : '➕ Create New Clause'}
+  </h2>
+
+  <form onSubmit={handleSubmit} className="clause-form">
+
+    {/* Input Row */}
+    <div className="clause-input-row">
       <input
         type="text"
-        placeholder="Filter by category..."
-        value={filterCategory}
-        onChange={(e) => setFilterCategory(e.target.value)}
-        style={{ padding: "0.5rem", borderRadius: "6px", border: "1px solid #cbd5e1", marginBottom: "1rem" }}
+        placeholder="Clause Type (e.g., compensation) *"
+        value={formData.clause_type}
+        onChange={(e) =>
+          setFormData({ ...formData, clause_type: e.target.value })
+        }
+        required
+        className="clause-input"
       />
 
-      {/* GROUPED CLAUSES */}
-      {loading ? (
-        <p>Loading...</p>
-      ) : (
-        Object.keys(groupedClauses).sort().map((category) => (
-          <details key={category} open>
-            <summary>{category} ({groupedClauses[category].length})</summary>
+      <input
+        type="text"
+        placeholder="Category (e.g., offer_letter) *"
+        value={formData.category}
+        onChange={(e) =>
+          setFormData({ ...formData, category: e.target.value })
+        }
+        required
+        className="clause-input"
+      />
+    </div>
 
-            <div className="grid">
-              {groupedClauses[category].map((c) => (
-                <div key={c.id} className="card">
-                  <h3>{c.clause_type}</h3>
-                  <p style={{ whiteSpace: "pre-line" }}>{c.content}</p>
+    {/* BIG Textarea-like Editor */}
+    <label className="clause-textarea-label">Clause Content *</label>
+    <div className="clause-textarea-box">
+      <RichTextEditor
+        value={formData.content_html}
+        onChange={(html) => setFormData({ ...formData, content_html: html })}
+        placeholder="Enter clause content..."
+      />
+    </div>
 
-                  <div style={{ display: "flex", gap: "1rem" }}>
+    {/* Sample Checkbox */}
+    <label className="clause-checkbox">
+      <input
+        type="checkbox"
+        checked={formData.is_sample}
+        onChange={(e) =>
+          setFormData({ ...formData, is_sample: e.target.checked })
+        }
+      />
+      <span>Mark as sample clause</span>
+    </label>
+
+    {/* Buttons */}
+    <div className="clause-actions">
+      <button
+        type="submit"
+        disabled={saving}
+        className="clause-btn-primary"
+      >
+        <PlusCircle size={16} style={{ marginRight: '0.5rem' }} />
+        {saving ? 'Saving...' : formData.id ? 'Save Changes' : 'Add Clause'}
+      </button>
+
+      {formData.id && (
+        <button
+          type="button"
+          onClick={resetForm}
+          className="clause-btn-secondary"
+        >
+          Cancel Edit
+        </button>
+      )}
+    </div>
+
+  </form>
+</div>
+
+{/* View Switcher */}
+<div style={{ marginBottom: '1.5rem', display: 'flex', gap: '1rem' }}>
+  <button
+    className={`btn ${view === 'normal' ? 'btn-primary' : 'btn-light'}`}
+    onClick={() => setView('normal')}
+  >
+    Normal Clauses
+  </button>
+
+  <button
+    className={`btn ${view === 'merged' ? 'btn-primary' : 'btn-light'}`}
+    onClick={() => setView('merged')}
+  >
+    Merged Clauses
+  </button>
+</div>
+
+{/* Filter */}
+<div style={{ marginBottom: '1rem' }}>
+  <label style={{ marginRight: '0.5rem', fontWeight: 600 }}>
+    {view === 'merged' ? 'Filter Merged Categories:' : 'Filter Categories:'}
+  </label>
+
+  <input
+    type="text"
+    placeholder={view === 'merged' ? "Filter merged_* categories..." : "Filter categories..."}
+    value={filterCategory}
+    onChange={(e) => setFilterCategory(e.target.value)}
+    style={{
+      padding: '0.5rem',
+      borderRadius: '6px',
+      border: '1px solid #e2e8f0',
+      minWidth: '250px'
+    }}
+  />
+</div>
+{/* Clauses List */}
+{loading ? (
+  <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+    <div className="spinner" style={{ margin: '0 auto 1rem' }}></div>
+    <p>Loading clauses...</p>
+  </div>
+) : (
+  <div className="clause-groups">
+    {Object.keys(groupedClauses).length === 0 ? (
+      <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+        <p>No clauses found {filterCategory ? 'matching that filter' : ''}.</p>
+      </div>
+    ) : (
+      Object.keys(groupedClauses)
+
+        // 🔥 FILTER: Normal vs Merged
+        .filter(cat =>
+          view === 'merged'
+            ? cat.startsWith('merged_')        // show merged only
+            : !cat.startsWith('merged_')       // show normal only
+        )
+
+        // 🔥 FILTER: category search input
+        .filter(cat =>
+          filterCategory.trim() === ''
+            ? true
+            : cat.toLowerCase().includes(filterCategory.toLowerCase())
+        )
+
+        .sort()
+        .map((category) => (
+          <details key={category} open className="clause-category-group">
+            <summary
+              style={{
+                fontWeight: 600,
+                fontSize: '1.1rem',
+                padding: '0.75rem',
+                cursor: 'pointer',
+                background: '#f8fafc',
+                borderRadius: '8px',
+                marginBottom: '0.75rem'
+              }}
+            >
+              {category} ({groupedClauses[category].length})
+            </summary>
+
+            <div
+              className="grid"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                gap: '1rem'
+              }}
+            >
+              {groupedClauses[category].map((clause) => (
+                <div
+                  key={clause.id}
+                  draggable={mergeMode}
+                  onDragStart={(e) => handleDragStart(e, clause)}
+                  onDragOver={(e) => handleDragOver(e, clause)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, clause)}
+                  onClick={() => mergeMode && toggleMergeSelection(clause)}
+                  className="card"
+                  style={{
+                    cursor: mergeMode ? 'pointer' : 'default',
+                    border: selectedForMerge.some(c => c.id === clause.id)
+                      ? '2px solid #3b82f6'
+                      : dragOverClause?.id === clause.id
+                      ? '2px dashed #3b82f6'
+                      : '1px solid #e2e8f0',
+                    background: selectedForMerge.some(c => c.id === clause.id)
+                      ? '#eff6ff'
+                      : 'white',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                  }}
+                >
+
+                  {/* Title + Badges */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      marginBottom: '0.5rem'
+                    }}
+                  >
+                    <h3 style={{ fontWeight: 600, margin: 0 }}>
+                      {clause.clause_type}
+                    </h3>
+
+                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                      {clause.is_ai_generated && (
+                        <span
+                          className="badge"
+                          style={{
+                            background: '#dbeafe',
+                            color: '#1e40af',
+                            padding: '0.125rem 0.5rem',
+                            borderRadius: '9999px',
+                            fontSize: '0.75rem'
+                          }}
+                        >
+                          AI
+                        </span>
+                      )}
+
+                      {clause.is_sample && (
+                        <span
+                          className="badge"
+                          style={{
+                            background: '#fef3c7',
+                            color: '#92400e',
+                            padding: '0.125rem 0.5rem',
+                            borderRadius: '9999px',
+                            fontSize: '0.75rem'
+                          }}
+                        >
+                          ⭐ Sample
+                        </span>
+                      )}
+
+                      {(clause.parent_clause_ids || category.startsWith('merged_')) && (
+                        <span
+                          className="badge"
+                          style={{
+                            background: '#f3e8ff',
+                            color: '#6b21a8',
+                            padding: '0.125rem 0.5rem',
+                            borderRadius: '9999px',
+                            fontSize: '0.75rem'
+                          }}
+                        >
+                          🔗 Merged
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Content Preview */}
+                  <div
+                    style={{
+                      color: '#475569',
+                      fontSize: '0.875rem',
+                      marginBottom: '1rem',
+                      maxHeight: '100px',
+                      overflow: 'hidden'
+                    }}
+                    // Using dangeroulySetInnerHTML to display RTE content
+                    dangerouslySetInnerHTML={{
+                      __html:
+                        (clause.content_html || clause.content).substring(0, 200) +
+                        ((clause.content_html || clause.content).length > 200 ? '...' : '')
+                    }}
+                  />
+
+                  {/* Action buttons */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '0.5rem',
+                      marginTop: 'auto',
+                      flexWrap: 'wrap'
+                    }}
+                  >
                     <button
-                      onClick={() => handleEdit(c)}
-                      style={{ background: "#f59e0b", color: "white", border: "none", padding: "0.4rem 0.8rem", borderRadius: "6px" }}>
-                      <Pencil size={16} /> Edit
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewClause(clause);
+                      }}
+                      className="btn btn-outline btn-sm"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}
+                    >
+                      <Eye size={14} /> Preview
                     </button>
 
                     <button
-                      onClick={() => handleDeleteClause(c.id)}
-                      style={{ background: "#ef4444", color: "white", border: "none", padding: "0.4rem 0.8rem", borderRadius: "6px" }}>
-                      <Trash2 size={16} /> Delete
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(clause);
+                      }}
+                      className="btn btn-warning btn-sm"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}
+                    >
+                      <Pencil size={14} /> Edit
+                    </button>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSample(clause);
+                      }}
+                      className="btn btn-outline btn-sm"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}
+                    >
+                      <Star size={14} />
+                      {clause.is_sample ? 'Unmark' : 'Sample'}
+                    </button>
+
+                    {clause.is_sample && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          cloneSample(clause);
+                        }}
+                        className="btn btn-success btn-sm"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.25rem'
+                        }}
+                      >
+                        <Copy size={14} /> Clone
+                      </button>
+                    )}
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(clause.id);
+                      }}
+                      className="btn btn-danger btn-sm"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}
+                    >
+                      <Trash2 size={14} /> Delete
                     </button>
                   </div>
                 </div>
@@ -373,67 +1002,91 @@ export default function ClauseManager() {
             </div>
           </details>
         ))
-      )}
+    )}
+  </div>
+)}
 
-      {/* MODAL */}
-      {showModal && (
-        <SimpleModal
-          title={
-            modalType === "single"
-              ? "Generate Single Clause (AI)"
-              : "Generate Full Clause Set (AI)"
-          }
-          onSubmit={handleModalSubmit}
-          onClose={() => setShowModal(false)}
+
+      {/* Preview Modal */}
+      {previewClause && (
+        <div
+          className="modal-overlay"
+          onClick={() => setPreviewClause(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}
         >
-          {/* Clean modal UI fields */}
-          {modalType === "single" && (
-            <div style={{ display: 'grid', gap: '1rem' }}>
-              <div style={{ display: 'grid', gap: '0.4rem' }}>
-                <label style={{ fontWeight: 600 }}>Clause Type</label>
-                <input
-                  className="input"
-                  placeholder="e.g. Compensation Clause"
-                  value={modalInputs.clause_type}
-                  onChange={(e) =>
-                    setModalInputs({ ...modalInputs, clause_type: e.target.value })
-                  }
-                />
-              </div>
-
-              <div style={{ display: 'grid', gap: '0.4rem' }}>
-                <label style={{ fontWeight: 600 }}>Category</label>
-                <input
-                  className="input"
-                  placeholder="e.g. offer_letter / nda"
-                  value={modalInputs.category}
-                  onChange={(e) =>
-                    setModalInputs({ ...modalInputs, category: e.target.value })
-                  }
-                />
-              </div>
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'white',
+              borderRadius: '12px',
+              maxWidth: '800px',
+              width: '90%',
+              maxHeight: '80vh',
+              overflow: 'auto',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
+            }}
+          >
+            <div
+              className="modal-header"
+              style={{
+                padding: '1rem 1.5rem',
+                borderBottom: '1px solid #e2e8f0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}
+            >
+              <h3 style={{ margin: 0 }}>{previewClause.clause_type}</h3>
+              <button
+                onClick={() => setPreviewClause(null)}
+                className="btn-close-modal"
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '0.25rem'
+                }}
+              >
+                <X size={24} />
+              </button>
             </div>
-          )}
 
-          {modalType === "fullset" && (
-            <div style={{ display: 'grid', gap: '1rem' }}>
-              <div style={{ display: 'grid', gap: '0.4rem' }}>
-                <label style={{ fontWeight: 600 }}>Document Type</label>
-                <input
-                  className="input"
-                  placeholder="e.g. Offer Letter / NDA"
-                  value={modalInputs.document_type}
-                  onChange={(e) =>
-                    setModalInputs({
-                      ...modalInputs,
-                      document_type: e.target.value
-                    })
-                  }
-                />
-              </div>
+            <div
+              className="modal-body"
+              style={{ padding: '1.5rem' }}
+              // Render content with HTML for rich text
+              dangerouslySetInnerHTML={{
+                __html: previewClause.content_html || previewClause.content
+              }}
+            />
+
+            <div
+              className="modal-footer"
+              style={{
+                padding: '1rem 1.5rem',
+                borderTop: '1px solid #e2e8f0',
+                display: 'flex',
+                justifyContent: 'flex-end'
+              }}
+            >
+              <button
+                onClick={() => setPreviewClause(null)}
+                className="btn btn-secondary"
+              >
+                Close
+              </button>
             </div>
-          )}
-        </SimpleModal>
+          </div>
+        </div>
       )}
     </div>
   );
