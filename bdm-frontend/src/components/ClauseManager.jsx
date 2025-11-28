@@ -2,13 +2,24 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { clausesAPI } from '../services/api';
 import AIButton from './AIButton';
-import { 
-  Pencil, Trash2, PlusCircle, Sparkles, Eye, X, 
-  GitMerge, Star, Copy, Check 
+import {
+  Pencil, Trash2, PlusCircle, Sparkles, Eye, X,
+  GitMerge, Star, Copy, Check
 } from 'lucide-react';
 import '../styles/ClauseManager.css';
+
+// Initial form state
+const emptyClause = {
+  id: null,
+  clause_type: '',
+  content: '',
+  content_html: '', // Added content_html for RTE
+  category: '',
+  is_sample: false
+};
+
 // ====================================
-// Rich Text Editor Component
+// Rich Text Editor Component (from main branch)
 // ====================================
 function RichTextEditor({ value, onChange, placeholder }) {
   const editorRef = useRef(null);
@@ -22,6 +33,7 @@ function RichTextEditor({ value, onChange, placeholder }) {
 
   useEffect(() => {
     if (editorRef.current && value !== undefined) {
+      // Only update innerHTML if the value changes and it's different from the current content
       if (editorRef.current.innerHTML !== value) {
         editorRef.current.innerHTML = value || '';
       }
@@ -29,19 +41,23 @@ function RichTextEditor({ value, onChange, placeholder }) {
   }, [value]);
 
   const updateActiveState = () => {
-    setActive({
-      bold: document.queryCommandState("bold"),
-      italic: document.queryCommandState("italic"),
-      underline: document.queryCommandState("underline"),
-      ul: document.queryCommandState("insertUnorderedList"),
-      ol: document.queryCommandState("insertOrderedList"),
-    });
+    // Check command state only if the editor is focused or has focus recently to avoid errors
+    if (editorRef.current && editorRef.current === document.activeElement) {
+      setActive({
+        bold: document.queryCommandState("bold"),
+        italic: document.queryCommandState("italic"),
+        underline: document.queryCommandState("underline"),
+        ul: document.queryCommandState("insertUnorderedList"),
+        ol: document.queryCommandState("insertOrderedList"),
+      });
+    }
   };
 
   const execCommand = (cmd) => {
     document.execCommand(cmd, false, null);
     editorRef.current?.focus();
     updateActiveState();
+    // Fire onChange immediately after command execution
     onChange(editorRef.current.innerHTML);
   };
 
@@ -52,9 +68,24 @@ function RichTextEditor({ value, onChange, placeholder }) {
 
   const handlePaste = (e) => {
     e.preventDefault();
+    // Insert plain text on paste to strip formatting
     const text = e.clipboardData.getData("text/plain");
     document.execCommand("insertText", false, text);
   };
+
+  // Listen for mouse up and key up to update active states
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (editor) {
+      editor.addEventListener('mouseup', updateActiveState);
+      editor.addEventListener('keyup', updateActiveState);
+      return () => {
+        editor.removeEventListener('mouseup', updateActiveState);
+        editor.removeEventListener('keyup', updateActiveState);
+      };
+    }
+  }, []);
+
 
   return (
     <div className="rte-wrapper">
@@ -109,14 +140,14 @@ function RichTextEditor({ value, onChange, placeholder }) {
         contentEditable
         onInput={handleInput}
         onPaste={handlePaste}
-        onClick={updateActiveState}
-        onKeyUp={updateActiveState}
+        // onClick and onKeyUp are handled by useEffect listener now
         data-placeholder={placeholder}
         suppressContentEditableWarning
       ></div>
     </div>
   );
 }
+
 
 // ====================================
 // Main ClauseManager Component
@@ -129,17 +160,10 @@ export default function ClauseManager() {
   const [aiSingleLoading, setAiSingleLoading] = useState(false);
 
   // Form state
-  const [formData, setFormData] = useState({
-    id: null,
-    clause_type: '',
-    content: '',
-    content_html: '',
-    category: '',
-    is_sample: false
-  });
+  const [formData, setFormData] = useState(emptyClause);
 
   // Filter state
-  const [view, setView] = useState('normal');
+  const [view, setView] = useState('normal'); // Added view state
   const [filterCategory, setFilterCategory] = useState('');
 
   // Notification state
@@ -169,15 +193,9 @@ export default function ClauseManager() {
     setTimeout(() => setNotification(null), 4000);
   };
 
+  // --- Fetch all clauses ---
   const resetForm = () => {
-    setFormData({
-      id: null,
-      clause_type: '',
-      content: '',
-      content_html: '',
-      category: '',
-      is_sample: false
-    });
+    setFormData(emptyClause);
   };
 
   const exitMergeMode = () => {
@@ -209,9 +227,9 @@ export default function ClauseManager() {
   // ====================================
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!formData.clause_type || !formData.category || !formData.content_html) {
-      return showNotification('Please fill all required fields', 'error');
+      return showNotification('Please fill all required fields (Clause Type, Category, Content)', 'error');
     }
 
     setSaving(true);
@@ -223,6 +241,7 @@ export default function ClauseManager() {
 
       const payload = {
         clause_type: formData.clause_type,
+        // Save both plain text and HTML content
         content: plainText,
         content_html: formData.content_html,
         category: formData.category,
@@ -230,10 +249,10 @@ export default function ClauseManager() {
       };
 
       if (formData.id) {
-        await clausesAPI.update(formData.id, payload);
+        await clausesAPI.update(formData.id, payload); // Use payload here
         showNotification('Clause updated successfully!', 'success');
       } else {
-        await clausesAPI.createManual(payload);
+        await clausesAPI.createManual(payload); // Use payload here
         showNotification('Clause created successfully!', 'success');
       }
 
@@ -247,18 +266,21 @@ export default function ClauseManager() {
     }
   };
 
+  // --- Edit ---
   const handleEdit = (clause) => {
     setFormData({
       id: clause.id,
-      clause_type: clause.clause_type,
-      content: clause.content,
-      content_html: clause.content_html || clause.content,
-      category: clause.category,
-      is_sample: !!clause.is_sample
+      clause_type: clause.clause_type || '',
+      content: clause.content || '',
+      // Use content_html if available, otherwise use plain content
+      content_html: clause.content_html || clause.content || '',
+      category: clause.category || '',
+      is_sample: !!clause.is_sample // Ensure boolean
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // --- Delete clause ---
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this clause?')) return;
 
@@ -266,7 +288,7 @@ export default function ClauseManager() {
       await clausesAPI.delete(id);
       loadClauses();
       showNotification('Clause deleted', 'success');
-      
+
       if (formData.id === id) {
         resetForm();
       }
@@ -277,7 +299,7 @@ export default function ClauseManager() {
   };
 
   // ====================================
-  // Merge Operations
+  // Merge Operations (from main branch)
   // ====================================
   const toggleMergeSelection = (clause) => {
     if (selectedForMerge.some(c => c.id === clause.id)) {
@@ -287,52 +309,58 @@ export default function ClauseManager() {
     }
   };
 
-const handleMergeSelected = () => {
-  if (selectedForMerge.length < 2) {
-    return showNotification('Select at least 2 clauses to merge', 'error');
-  }
+  const handleMergeSelected = () => {
+    if (selectedForMerge.length < 2) {
+      return showNotification('Select at least 2 clauses to merge', 'error');
+    }
 
-  const clause_ids = selectedForMerge.map(c => c.id);
-  const clause_type = selectedForMerge.map(c => c.clause_type).join('_and_');
-  const category = `merged_${selectedForMerge[0].category || 'general'}`;
+    // Get types and join with a descriptive string
+    const clauseTypes = selectedForMerge.map(c => c.clause_type);
+    const clause_type = clauseTypes.length > 3
+        ? `${clauseTypes.slice(0, 3).join(', ')} and ${clauseTypes.length - 3} others`
+        : clauseTypes.join('_and_');
 
-  setPendingMerge({
-    clause_ids,
-    clause_type,
-    category,
-    sources: selectedForMerge
-  });
-};
+    const category = `merged_${selectedForMerge[0].category || 'general'}`;
 
-
-const confirmMerge = async () => {
-  if (!pendingMerge) return;
-
-  const clause_ids = pendingMerge.clause_ids;
-  const clause_type = pendingMerge.clause_type;
-  const category = pendingMerge.category;
-
-  try {
-    await clausesAPI.mergeClauses({
-      clause_ids,
-      clause_type,
-      category,
-      is_sample: false
+    setPendingMerge({
+      clause_ids: selectedForMerge.map(c => c.id),
+      clause_type: clause_type,
+      category: category,
+      sources: selectedForMerge
     });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-    showNotification('Clauses merged successfully!', 'success');
 
-    exitMergeMode();
-    loadClauses();
-  } catch (error) {
-    console.error('Merge failed:', error);
-    showNotification('Failed to merge clauses', 'error');
-  }
-};
+  const confirmMerge = async () => {
+    if (!pendingMerge) return;
+
+    const clause_ids = pendingMerge.clause_ids;
+    const clause_type = pendingMerge.clause_type;
+    const category = pendingMerge.category;
+
+    try {
+      // NOTE: Assuming clausesAPI.mergeClauses takes a list of IDs and new metadata
+      await clausesAPI.mergeClauses({
+        clause_ids,
+        clause_type,
+        category,
+        is_sample: false
+      });
+
+      showNotification('Clauses merged successfully!', 'success');
+
+      exitMergeMode();
+      loadClauses();
+    } catch (error) {
+      console.error('Merge failed:', error);
+      showNotification('Failed to merge clauses', 'error');
+    }
+  };
 
 
   // ====================================
-  // Drag and Drop
+  // Drag and Drop (for merge) (from main branch)
   // ====================================
   const handleDragStart = (e, clause) => {
     if (!mergeMode) return;
@@ -341,7 +369,7 @@ const confirmMerge = async () => {
   };
 
   const handleDragOver = (e, clause) => {
-    if (!mergeMode || !draggedClause) return;
+    if (!mergeMode || !draggedClause || draggedClause.id === clause.id) return;
     e.preventDefault();
     setDragOverClause(clause);
   };
@@ -350,30 +378,31 @@ const confirmMerge = async () => {
     setDragOverClause(null);
   };
 
-const handleDrop = (e, targetClause) => {
-  e.preventDefault();
+  const handleDrop = (e, targetClause) => {
+    e.preventDefault();
 
-  if (!draggedClause || draggedClause.id === targetClause.id) {
+    if (!draggedClause || draggedClause.id === targetClause.id) {
+      setDraggedClause(null);
+      setDragOverClause(null);
+      return;
+    }
+
+    // Build merge payload for two clauses
+    setPendingMerge({
+      clause_ids: [draggedClause.id, targetClause.id],
+      clause_type: `${draggedClause.clause_type}_and_${targetClause.clause_type}`,
+      category: `merged_${draggedClause.category || targetClause.category}`,
+      sources: [draggedClause, targetClause]
+    });
+
     setDraggedClause(null);
     setDragOverClause(null);
-    return;
-  }
-
-  // Build merge payload
-  setPendingMerge({
-    clause_ids: [draggedClause.id, targetClause.id],
-    clause_type: `${draggedClause.clause_type}_and_${targetClause.clause_type}`,
-    category: `merged_${draggedClause.category || targetClause.category}`,
-    sources: [draggedClause, targetClause]
-  });
-
-  setDraggedClause(null);
-  setDragOverClause(null);
-};
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
 
   // ====================================
-  // Sample Operations
+  // Sample Operations (from main branch)
   // ====================================
   const toggleSample = async (clause) => {
     try {
@@ -390,7 +419,7 @@ const handleDrop = (e, targetClause) => {
   };
 
   const cloneSample = async (clause) => {
-    const newCategory = prompt('Enter category for cloned clause:', clause.category);
+    const newCategory = window.prompt('Enter category for cloned clause:', clause.category);
     if (!newCategory) return;
 
     try {
@@ -404,11 +433,14 @@ const handleDrop = (e, targetClause) => {
   };
 
   // ====================================
-  // AI Operations
+  // AI Operations (combined logic)
   // ====================================
   const handleAIGenerateFullSet = async () => {
     const docType = window.prompt('Enter document type (e.g., offer_letter, nda):');
-    if (!docType) return;
+    if (!docType) {
+      showNotification("Document type required", "error");
+      return;
+    }
 
     try {
       setAiLoading(true);
@@ -431,10 +463,12 @@ const handleDrop = (e, targetClause) => {
           loadClauses();
           showNotification('AI clauses saved!', 'success');
         }
+      } else {
+        showNotification("AI generated no clauses for this document type.", "info");
       }
     } catch (error) {
-      console.error('AI generation failed:', error);
-      showNotification('AI generation failed', 'error');
+      console.error("AI full set generation failed:", error);
+      showNotification("AI generation failed", "error");
     } finally {
       setAiLoading(false);
     }
@@ -442,23 +476,36 @@ const handleDrop = (e, targetClause) => {
 
   const handleAIGenerateSingle = async () => {
     const clause_type = window.prompt('Enter clause type (e.g., "Confidentiality"):');
-    if (!clause_type) return;
+    if (!clause_type) {
+      showNotification("Clause type required", "error");
+      return;
+    }
 
     const category = window.prompt('Enter category (e.g., "nda"):');
-    if (!category) return;
+    if (!category) {
+      showNotification("Category required", "error");
+      return;
+    }
 
     try {
       setAiSingleLoading(true);
-      await clausesAPI.generateSingleAI({ clause_type, category });
+      // NOTE: Changed to generateSingleAI (assuming this creates and saves one directly)
+      const res = await clausesAPI.generateSingleAI({
+        clause_type: clause_type,
+        category: category
+      });
+
+      // Assuming API returns the created clause or a confirmation
       loadClauses();
       showNotification(`AI clause "${clause_type}" saved!`, 'success');
     } catch (error) {
-      console.error('AI single generation failed:', error);
-      showNotification('AI generation failed', 'error');
+      console.error("AI single generation failed:", error);
+      showNotification("AI generation failed", "error");
     } finally {
       setAiSingleLoading(false);
     }
   };
+
 
   // ====================================
   // Data Grouping and Filtering
@@ -466,17 +513,17 @@ const handleDrop = (e, targetClause) => {
   const groupedClauses = useMemo(() => {
     let filteredList = clauses;
 
+    // First filter by category text input
     if (filterCategory) {
       filteredList = clauses.filter(c =>
         c.category?.toLowerCase().includes(filterCategory.toLowerCase())
       );
     }
 
+    // Group the filtered list
     return filteredList.reduce((acc, clause) => {
       const category = clause.category || 'Uncategorized';
-      if (!acc[category]) {
-        acc[category] = [];
-      }
+      if (!acc[category]) acc[category] = [];
       acc[category].push(clause);
       return acc;
     }, {});
@@ -503,6 +550,7 @@ const handleDrop = (e, targetClause) => {
         )}
       </h1>
 
+      {/* Notification */}
       {notification && (
         <div className={`alert alert-${notification.type}`} style={{ marginBottom: '1rem' }}>
           {notification.message}
@@ -627,6 +675,7 @@ const handleDrop = (e, targetClause) => {
       <RichTextEditor
         value={formData.content_html}
         onChange={(html) => setFormData({ ...formData, content_html: html })}
+        placeholder="Enter clause content..."
       />
     </div>
 
@@ -649,7 +698,8 @@ const handleDrop = (e, targetClause) => {
         disabled={saving}
         className="clause-btn-primary"
       >
-        {formData.id ? 'Update Clause' : 'Create Clause'}
+        <PlusCircle size={16} style={{ marginRight: '0.5rem' }} />
+        {saving ? 'Saving...' : formData.id ? 'Save Changes' : 'Add Clause'}
       </button>
 
       {formData.id && (
@@ -726,8 +776,8 @@ const handleDrop = (e, targetClause) => {
 
         // 🔥 FILTER: category search input
         .filter(cat =>
-          filterCategory.trim() === '' 
-            ? true 
+          filterCategory.trim() === ''
+            ? true
             : cat.toLowerCase().includes(filterCategory.toLowerCase())
         )
 
@@ -775,7 +825,10 @@ const handleDrop = (e, targetClause) => {
                       : '1px solid #e2e8f0',
                     background: selectedForMerge.some(c => c.id === clause.id)
                       ? '#eff6ff'
-                      : 'white'
+                      : 'white',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
                   }}
                 >
 
@@ -823,7 +876,7 @@ const handleDrop = (e, targetClause) => {
                         </span>
                       )}
 
-                      {clause.parent_clause_ids && (
+                      {(clause.parent_clause_ids || category.startsWith('merged_')) && (
                         <span
                           className="badge"
                           style={{
@@ -849,6 +902,7 @@ const handleDrop = (e, targetClause) => {
                       maxHeight: '100px',
                       overflow: 'hidden'
                     }}
+                    // Using dangeroulySetInnerHTML to display RTE content
                     dangerouslySetInnerHTML={{
                       __html:
                         (clause.content_html || clause.content).substring(0, 200) +
@@ -977,7 +1031,8 @@ const handleDrop = (e, targetClause) => {
               maxWidth: '800px',
               width: '90%',
               maxHeight: '80vh',
-              overflow: 'auto'
+              overflow: 'auto',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
             }}
           >
             <div
@@ -1008,6 +1063,7 @@ const handleDrop = (e, targetClause) => {
             <div
               className="modal-body"
               style={{ padding: '1.5rem' }}
+              // Render content with HTML for rich text
               dangerouslySetInnerHTML={{
                 __html: previewClause.content_html || previewClause.content
               }}
