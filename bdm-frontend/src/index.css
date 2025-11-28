@@ -821,3 +821,58 @@ body {
 .template-select-card {
   position: relative;
 }
+
+/* Quill */
+.ql-container {
+  font-size: 15px;
+  font-family: 'Times New Roman', Times, serif;
+}
+
+.ql-editor {
+  min-height: 500px;
+  padding: 40px 60px;
+  background: white;
+}
+
+.ql-editor h1 {
+  font-size: 2em;
+  font-weight: bold;
+  margin: 1em 0 0.5em 0;
+}
+
+.ql-editor h2 {
+  font-size: 1.5em;
+  font-weight: bold;
+  margin: 0.8em 0 0.4em 0;
+}
+
+.ql-editor h3 {
+  font-size: 1.17em;
+  font-weight: bold;
+}
+
+.ql-toolbar {
+  background: #f8fafc;
+  border-bottom: 2px solid #e2e8f0 !important;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+.ql-snow .ql-picker {
+  font-size: 14px;
+}
+
+.mode-switch-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  flex-wrap: nowrap !important;
+}
+
+.mode-btn {
+  display: flex !important;
+  align-items: center !important;
+  gap: .5rem;
+}
