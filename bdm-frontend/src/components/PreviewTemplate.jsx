@@ -13,10 +13,7 @@ export default function PreviewTemplate({ template, onClose }) {
   };
   
   // NOTE: This assumes an export mechanism exists on the backend to create a PDF from the template structure
-  const handleExportPDF = () => {
-    alert("PDF export functionality is not fully implemented in the frontend snippet. You would typically call a backend API endpoint here.");
-  };
-
+  
   const handleExportPDF = () => {
     alert(
       "PDF export functionality is not implemented in the frontend. You would typically call a backend API endpoint here."
