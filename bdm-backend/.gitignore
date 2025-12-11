@@ -38,3 +38,5 @@ temp/
 # PDF files (generated documents)
 uploads/
 generated_pdfs/
+# Ignore debug preview PDFs
+debug_previews/
