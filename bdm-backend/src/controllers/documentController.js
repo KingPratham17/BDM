@@ -210,9 +210,7 @@ class DocumentController {
     }
   }
 
-  /* ---------------------------------------------------------
-      2. BULK GENERATE FROM EXCEL (TEMPLATE BASED)
-  --------------------------------------------------------- */
+
   async bulkGenerateFromExcel(req, res) {
     try {
       const { template_id } = req.body;
@@ -347,9 +345,7 @@ class DocumentController {
     }
   }
 
-  /* ---------------------------------------------------------
-      3. AI BULK GENERATE FROM EXCEL 
-  --------------------------------------------------------- */
+
   async aiBulkGenerateFromExcel(req, res) {
     try {
       const { document_type } = req.body;
@@ -455,9 +451,7 @@ class DocumentController {
     }
   }
 
-  /* ---------------------------------------------------------
-      4. GET ALL DOCUMENTS
-  --------------------------------------------------------- */
+  
   async getAllDocuments(req, res) {
     try {
       const { document_type } = req.query;
@@ -474,9 +468,7 @@ class DocumentController {
     }
   }
 
-  /* ---------------------------------------------------------
-      5. GET ONE DOCUMENT
-  --------------------------------------------------------- */
+  
   async getDocumentById(req, res) {
     try {
       const { id } = req.params;
