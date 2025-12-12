@@ -9,10 +9,10 @@ const documentRoutes = require('./src/routes/documentRoutes');
 const clauseRoutes = require('./src/routes/clauseRoutes');
 const templateRoutes = require('./src/routes/templateRoutes');
 const pdfRoutes = require('./src/routes/pdfRoutes');
-const translateRoutes = require('./src/routes/translateRoutes'); // <-- added
+const translateRoutes = require('./src/routes/translateRoutes');
+const aiRoutes = require('./src/routes/aiRoutes');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors({
@@ -24,11 +24,13 @@ app.use(cors({
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-// Request logging middleware
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
+// Request logging middleware (skip in test environment)
+if (process.env.NODE_ENV !== 'test') {
+  app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+    next();
+  });
+}
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -53,9 +55,10 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/clauses', clauseRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/pdf', pdfRoutes);
-
-// Mount translation routes (non-destructive, additive)
 app.use('/api/translate', translateRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/ai', aiRoutes);
+app.use('/openai', aiRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -90,24 +93,31 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-const startServer = async () => {
-  try {
-    // Test database connection
-    await testConnection();
-    
-    app.listen(PORT, () => {
-      console.log('================================================');
-      console.log(`🚀 BDM Backend Server running on port ${PORT}`);
-      console.log(`📍 Base URL: http://localhost:${PORT}`);
-      console.log(`🏥 Health check: http://localhost:${PORT}/health`);
-      console.log(`📚 API Docs: http://localhost:${PORT}/`);
-      console.log('================================================');
-    });
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
-  }
-};
+// Start server ONLY if not in test environment
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
+  
+  const startServer = async () => {
+    try {
+      // Test database connection
+      await testConnection();
+      
+      app.listen(PORT, () => {
+        console.log('================================================');
+        console.log(`🚀 BDM Backend Server running on port ${PORT}`);
+        console.log(`📍 Base URL: http://localhost:${PORT}`);
+        console.log(`🏥 Health check: http://localhost:${PORT}/health`);
+        console.log(`📚 API Docs: http://localhost:${PORT}/`);
+        console.log('================================================');
+      });
+    } catch (error) {
+      console.error('Failed to start server:', error);
+      process.exit(1);
+    }
+  };
 
-startServer();
+  startServer();
+}
+
+// Export app for testing
+module.exports = app;

@@ -4,7 +4,8 @@ import ClauseManager from './components/ClauseManager';
 import TemplateBuilder from './components/TemplateBuilder';
 import DocumentGenerator from './components/DocumentGenerator';
 import Dashboard from './components/Dashboard';
-
+import './utils/joditAiWiring';
+import './utils/uiDialogs';
 import './index.css';
 
 function App() {

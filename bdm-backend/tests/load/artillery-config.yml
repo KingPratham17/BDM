@@ -1,0 +1,93 @@
+config:
+  target: "http://localhost:5000"
+  phases:
+    # Warm-up phase: 10 users/sec for 30 seconds
+    - duration: 30
+      arrivalRate: 5
+      name: "Warm-up phase"
+    
+    # Ramp-up phase: 10 -> 50 users/sec over 60 seconds
+    - duration: 60
+      arrivalRate: 10
+      rampTo: 50
+      name: "Ramp-up phase"
+    
+    # Sustained load: 50 users/sec for 120 seconds
+    - duration: 120
+      arrivalRate: 50
+      name: "Sustained load"
+    
+    # Spike test: 100 users/sec for 30 seconds
+    - duration: 30
+      arrivalRate: 100
+      name: "Spike test"
+
+  plugins:
+    expect: {}
+  
+  # Performance thresholds
+  ensure:
+    maxErrorRate: 1  # Max 1% error rate
+    p95: 800         # 95th percentile response time < 800ms
+    p99: 1500        # 99th percentile response time < 1500ms
+
+scenarios:
+  # =================== READ OPERATIONS ===================
+  - name: "Get all clauses"
+    weight: 30
+    flow:
+      - get:
+          url: "/api/clauses"
+          expect:
+            - statusCode: 200
+            - contentType: json
+            - hasProperty: "data"
+
+  - name: "Get specific clause"
+    weight: 25
+    flow:
+      - get:
+          url: "/api/clauses/1"
+          expect:
+            - statusCode: [200, 404]
+
+  - name: "Get clauses by category"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/clauses?category=offer_letter"
+          expect:
+            - statusCode: 200
+
+  # =================== WRITE OPERATIONS ===================
+  - name: "Create clause"
+    weight: 10
+    flow:
+      - post:
+          url: "/api/clauses/manual"
+          json:
+            clause_type: "load_test_clause"
+            content: "Load test content {{ $randomString() }}"
+            category: "load_test"
+            is_sample: false
+          expect:
+            - statusCode: 201
+            - hasProperty: "data.id"
+
+  # =================== TEMPLATE OPERATIONS ===================
+  - name: "Get all templates"
+    weight: 10
+    flow:
+      - get:
+          url: "/api/templates"
+          expect:
+            - statusCode: 200
+
+  # =================== DOCUMENT OPERATIONS ===================
+  - name: "Get all documents"
+    weight: 5
+    flow:
+      - get:
+          url: "/api/documents"
+          expect:
+            - statusCode: 200
